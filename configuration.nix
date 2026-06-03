@@ -67,20 +67,12 @@
 
   environment.systemPackages = with pkgs; [
     git
-    git-credential-manager
-
     curl
     wget
     vim
     htop
     chromium
   ];
-  
-  programs.git.config.credential = {
-    helper = "manager";
-    "https://github.com".username = "mattjurenka";
-    credentialStore = "cache";
-  };
 
   # This option defines the first version of NixOS you have installed on this particular machine,
   # and is used to maintain compatibility with application data (e.g. databases) created on older NixOS versions.

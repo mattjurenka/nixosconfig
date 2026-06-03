@@ -14,6 +14,7 @@ in
     ripgrep
     btop
     zip
+    unzip
     fastfetch
 
     telegram-desktop
