@@ -45,12 +45,12 @@
   services.pcscd.enable = true;
   
   #locales
-  time.timeZone = "China/Shanghai";
+  time.timeZone = "Asia/Shanghai";
   i18n.defaultLocale = "en_US.UTF-8";
 
   #wayland-related
   security.polkit.enable = true;
-  hardware.opengl.enable = true;
+  hardware.graphics.enable = true;
 
   users.users = {
     matthew = {
@@ -72,7 +72,11 @@
     vim
     htop
     chromium
+    mate-polkit
+    expressvpn
   ];
+  
+  services.expressvpn.enable = true;
 
   # This option defines the first version of NixOS you have installed on this particular machine,
   # and is used to maintain compatibility with application data (e.g. databases) created on older NixOS versions.

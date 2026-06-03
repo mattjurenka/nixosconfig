@@ -18,8 +18,8 @@ in
     fastfetch
 
     telegram-desktop
-    vscodium
     gimp
+    expressvpn
 
     jetbrains-mono
     noto-fonts
@@ -42,6 +42,9 @@ in
   wayland.windowManager.sway = {
     enable = true;
     config = rec {
+      startup = [
+        { command = "${pkgs.mate.mate-polkit}/libexec/polkit-mate-authentication-agent-1"; }
+      ];
       bars = [
         {
           statusCommand = "${pkgs.i3status}/bin/i3status";
@@ -132,6 +135,32 @@ in
     };
     
     # Optional: Set a theme if you want
+  };
+
+  programs.vscode = {
+    enable = true;
+    package = pkgs.vscodium;
+    profiles.default = {
+      extensions = with pkgs.vscode-extensions; [
+        jnoortheen.nix-ide
+      ];
+      # not working : 
+      userSettings = {
+        "nix.serverPath" = "nixd";
+        "nix.enableLanguageServer" = true;
+        "nixpkgs" = {
+          "expr" ="import <nixpkgs> { }";
+        };
+        "formatting" = {
+          "command" = [
+            "nixfmt"
+          ];
+        };
+        "nix.formatterPath" = "nixfmt";
+        "git.autofetch" = true;
+        "update.showReleaseNotes" = false;
+      };
+    };
   };
 
 }
