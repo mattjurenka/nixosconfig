@@ -1,9 +1,10 @@
 { self, inputs, ... }: {
-  flake.nixosModules.myMachineConfiguration = { pkgs, lib, ... }: {
+  flake.nixosModules.ideapadLaptopConfiguration = { pkgs, lib, ... }: {
     imports = [
-      self.nixosModules.myMachineHardware
+      self.nixosModules.ideapadLaptopHardware
       self.nixosModules.niri
     ];
+    home-manager.users.matthew = self.homeModules.matthewModule;
 
     # Use the systemd-boot EFI boot loader.
     boot.loader = {
@@ -54,6 +55,8 @@
       wget
       upower
     ];
+
+    services.upower.enable = true;
 
     networking.proxy.default = "http://10.140.27.149:8080";
     networking.proxy.noProxy = "127.0.0.1,localhost";

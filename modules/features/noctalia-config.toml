@@ -1,0 +1,33 @@
+[bar.default]
+capsule = false
+font_weight = 400
+margin_edge = 0
+margin_ends = 0
+radius = 0
+scale = 1.1000000000000001
+widget_spacing = 12
+
+[lockscreen_widgets]
+enabled = false
+schema_version = 2
+widget_order = [ "lockscreen-login-box@eDP-1" ]
+
+    [lockscreen_widgets.grid]
+    cell_size = 16
+    major_interval = 4
+    visible = true
+
+    [lockscreen_widgets.widget."lockscreen-login-box@eDP-1"]
+    box_height = 0.0
+    box_width = 0.0
+    cx = 960.0
+    cy = 957.0
+    output = "eDP-1"
+    rotation = 0.0
+    type = "login_box"
+
+[shell]
+font_family = "Liberation Sans"
+
+[theme]
+builtin = "Dracula"
