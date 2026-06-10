@@ -1,14 +1,22 @@
-{ self, inputs, ... }: {
-  perSystem = { pkgs, system, ... }: { # Add 'system' here to pull the correct binary architecture
-    packages.myNoctalia = inputs.wrapper-modules.wrappers.noctalia-shell.wrap {
-      inherit pkgs; 
+# modules/features/noctalia.nix
+{ inputs, ... }:
+{
+  # Every file in the dendritic pattern is strictly a top-level flake-parts module.
+  # We use flake.modules.<class>.<feature> to house our config.
+  
+  config.flake.modules.homeManager.noctalia = { ... }: {
 
-      # Directly reference the compiled v5 binary from your new flake input
-      package = inputs.noctalia.packages.${system}.default;
+    # 1. IMPORT the external home-manager module exactly here
+    imports = [
+      inputs.noctalia.homeModules.default 
+      # ^ Adjust this path based on what the upstream flake names its HM module
+    ];
 
-      # Parse your v5 settings file
-      settings = (builtins.fromTOML 
-        (builtins.readFile ./noctalia-config.toml));
+    # 2. DEFINE and configure the program now that the option is imported
+    programs.noctalia = {
+      enable = true;
+      settings = builtins.fromTOML (builtins.readFile ./noctalia-config.toml);
     };
   };
 }
+

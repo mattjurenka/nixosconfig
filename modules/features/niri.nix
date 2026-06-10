@@ -6,12 +6,12 @@
     };
   };
 
-  perSystem = { pkgs, lib, self', ... }: {
+  perSystem = { pkgs, lib, self', inputs', ... }: {
     packages.myNiri = inputs.wrapper-modules.wrappers.niri.wrap {
       inherit pkgs;
       settings = {
         spawn-at-startup = [
-          (lib.getExe self'.packages.myNoctalia)
+          (lib.getExe inputs'.noctalia.packages.default)
         ];
 
         xwayland-satellite.path = lib.getExe pkgs.xwayland-satellite;
@@ -23,7 +23,7 @@
         binds = {
           "Mod+Return".spawn-sh = lib.getExe pkgs.kitty;
           "Mod+Q".close-window = {};
-          "Mod+S".spawn-sh = "${lib.getExe self'.packages.myNoctalia} ipc call launcher toggle";
+          #"Mod+S".spawn-sh = "${lib.getExe self'.packages.myNoctalia} ipc call launcher toggle";
           "Mod+Tab".toggle-overview = {};
 
           "Mod+Shift+H".move-column-left = {};

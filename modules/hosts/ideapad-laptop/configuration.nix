@@ -2,7 +2,6 @@
   flake.nixosModules.ideapadLaptopConfiguration = { pkgs, lib, ... }: {
     imports = [
       self.nixosModules.ideapadLaptopHardware
-      self.nixosModules.niri
     ];
     home-manager.users.matthew = self.homeModules.matthewModule;
 
