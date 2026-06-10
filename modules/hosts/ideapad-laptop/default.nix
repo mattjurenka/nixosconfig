@@ -5,6 +5,8 @@
       self.nixosModules.niri
       self.nixosModules.myHomeManager
       self.nixosModules.user-matt
+      inputs.stylix.nixosModules.stylix
+      self.nixosModules.stylix
     ];
   };
 }

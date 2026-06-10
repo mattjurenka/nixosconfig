@@ -19,6 +19,10 @@
     imports = [
       config.flake.modules.homeManager.noctalia
     ];
+
+    programs.kitty.enable = true;
+    stylix.targets.kitty.enable = true;
+  
     programs.bash.enable = true;
     programs.bash.shellAliases.ll = "ls -l";
 

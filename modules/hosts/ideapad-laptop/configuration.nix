@@ -55,6 +55,14 @@
       upower
     ];
 
+    fonts.packages = with pkgs; [
+      nerd-fonts.jetbrains-mono
+    ];
+
+    fonts.fontconfig.defaultFonts = {
+      monospace = [ "JetBrainsMono NF" ];
+    };
+
     services.upower.enable = true;
 
     networking.proxy.default = "http://10.140.27.149:8080";
@@ -93,4 +101,5 @@
     };
 
   };
+
 }
