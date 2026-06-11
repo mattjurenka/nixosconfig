@@ -79,6 +79,10 @@ in
           source = "custom";
           custom_palette = "customStylix";
         };
+        wallpaper = {
+          enabled = true;
+          default.path = ./wallpaper.webp;
+        };
       };
     };
   };
