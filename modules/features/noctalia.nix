@@ -83,8 +83,12 @@ in
           enabled = true;
           default.path = ./wallpaper.webp;
         };
+        shell = {
+          avatar_path = ./avatar.webp;
+        };
       };
     };
+
   };
 }
 

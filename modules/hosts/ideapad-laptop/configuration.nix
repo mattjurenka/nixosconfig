@@ -100,6 +100,35 @@
       };
     };
 
+    services.power-profiles-daemon.enable = true;
+    hardware.bluetooth = {
+      enable = true;
+      powerOnBoot = true;
+      settings = {
+        General = {
+          # Enables A2DP Sink, Media, and lower-level profiles
+          Enable = "Source,Sink,Media,Socket";
+          # Speeds up connection handshakes 
+          FastConnectable = true;
+          # Keeps battery status updating accurately in Noctalia
+          Experimental = true;
+          AutoConnect = true;
+          JustWorksRepairing = "always";
+        };
+        Policy = {
+          AutoEnable = true;
+        };
+      };
+    };
+    
+    # Ensure the Pipewire Bluetooth audio backend is enabled
+    services.pipewire = {
+      enable = true;
+      alsa.enable = true;
+      pulse.enable = true;
+      wireplumber.enable = true;
+    };
+
   };
 
 }

@@ -18,6 +18,7 @@
   flake.homeModules.matthewModule = { pkgs, ... }: {
     imports = [
       config.flake.modules.homeManager.noctalia
+      inputs.spicetify-nix.homeManagerModules.default
     ];
 
     programs.kitty.enable = true;
@@ -40,12 +41,19 @@
     programs.bash.enable = true;
     programs.bash.shellAliases.ll = "ls -l";
 
+    programs.spicetify.enable = true;
+
+    programs.fastfetch = {
+      enable = true;
+    };
+
     home.packages = with pkgs; [
       ripgrep
       gemini-cli
       zathura
       nil
       loupe
+      cmatrix
     ];
     home.stateVersion = "24.11";
   };
