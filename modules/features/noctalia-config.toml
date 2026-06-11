@@ -1,3 +1,44 @@
+[bar.default]
+center = [ "clock", "date" ]
+end = [
+    "audio_visualizer",
+    "media",
+    "input_volume",
+    "output_volume",
+    "spacer_2",
+    "network",
+    "spacer_2",
+    "bluetooth",
+    "battery",
+    "spacer_2",
+    "control-center",
+    "session"
+]
+margin_edge = 8
+margin_ends = 8
+padding = 8
+radius = 8
+scale = 1.05
+start = [ "workspaces", "active_window" ]
+
+[[control_center.shortcuts]]
+type = "wifi"
+
+[[control_center.shortcuts]]
+type = "bluetooth"
+
+[[control_center.shortcuts]]
+type = "nightlight"
+
+[[control_center.shortcuts]]
+type = "audio"
+
+[[control_center.shortcuts]]
+type = "mic_mute"
+
+[[control_center.shortcuts]]
+type = "session"
+
 [location]
 address = "Shanghai, China"
 
@@ -24,14 +65,39 @@ widget_order = [ "lockscreen-login-box@eDP-1" ]
 app_icon_color = "error"
 font_family = "JetBrainsMono NF"
 
+    [shell.panel]
+    clipboard_placement = "attached"
+    launcher_placement = "attached"
+    open_near_click_clipboard = true
+    open_near_click_control_center = true
+    open_near_click_launcher = true
+    open_near_click_session = true
+    open_near_click_wallpaper = true
+
     [shell.screen_corners]
     enabled = true
     size = 16
 
 [theme]
-builtin = "Gruvbox"
+custom_palette = "customStylix"
+mode = "dark"
+source = "custom"
 
     [theme.templates]
     builtin_ids = [ "kitty", "niri" ]
     enable_builtin_templates = false
     enable_community_templates = false
+
+[widget.control-center]
+glyph = "home"
+
+[widget.session]
+capsule = true
+capsule_padding = 4.0
+
+[widget.spacer_2]
+length = 32
+type = "spacer"
+
+[widget.workspaces]
+capsule = true

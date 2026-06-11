@@ -15,10 +15,10 @@
         ];
 
         xwayland-satellite.path = lib.getExe pkgs.xwayland-satellite;
-        input.keyboard.xkb.layout = "us,ua";
+        input.keyboard.xkb.layout = "us";
         input.keyboard.xkb.options = "caps:escape";
 
-        layout.gaps = 5;
+        layout.gaps = 16;
 
         binds = {
           "Mod+Return".spawn-sh = "kitty";
@@ -26,6 +26,10 @@
           "Mod+Space".spawn-sh = "${lib.getExe inputs'.noctalia.packages.default} msg panel-toggle launcher";
           "Mod+S".spawn-sh = "${lib.getExe inputs'.noctalia.packages.default} msg screenshot-region";
           "Mod+Tab".toggle-overview = {};
+          
+          "Mod+F".fullscreen-window = {};
+          "Mod+M".maximize-column = {};
+
 
           "Mod+Shift+H".move-column-left = {};
           "Mod+Shift+J".move-window-down = {};
