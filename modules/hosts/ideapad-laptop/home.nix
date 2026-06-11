@@ -22,6 +22,20 @@
 
     programs.kitty.enable = true;
     stylix.targets.kitty.enable = true;
+
+    stylix.targets.vscode.enable = true;
+    programs.vscode = {
+      enable = true;
+      
+      extensions = with pkgs.vscode-extensions; [
+        jnoortheen.nix-ide
+      ];
+      
+      profiles.default.userSettings = {
+        "nix.enableLanguageServer" = true;
+        "nix.serverPath" = "nil";
+      };
+    };
   
     programs.bash.enable = true;
     programs.bash.shellAliases.ll = "ls -l";
@@ -29,6 +43,9 @@
     home.packages = with pkgs; [
       ripgrep
       gemini-cli
+      zathura
+      nil
+      loupe
     ];
     home.stateVersion = "24.11";
   };

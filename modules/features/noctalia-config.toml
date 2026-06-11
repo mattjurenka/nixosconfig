@@ -1,11 +1,5 @@
-[bar.default]
-capsule = false
-font_weight = 400
-margin_edge = 0
-margin_ends = 0
-radius = 0
-scale = 1.1000000000000001
-widget_spacing = 12
+[location]
+address = "Shanghai, China"
 
 [lockscreen_widgets]
 enabled = false
@@ -27,7 +21,17 @@ widget_order = [ "lockscreen-login-box@eDP-1" ]
     type = "login_box"
 
 [shell]
-font_family = "Liberation Sans"
+app_icon_color = "error"
+font_family = "JetBrainsMono NF"
+
+    [shell.screen_corners]
+    enabled = true
+    size = 16
 
 [theme]
-builtin = "Dracula"
+builtin = "Gruvbox"
+
+    [theme.templates]
+    builtin_ids = [ "kitty", "niri" ]
+    enable_builtin_templates = false
+    enable_community_templates = false
