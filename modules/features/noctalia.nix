@@ -12,7 +12,7 @@ in
 
     # 1. IMPORT the external home-manager module exactly here
     imports = [
-      inputs.noctalia.homeModules.default 
+      inputs.noctalia.homeModules.default
       # ^ Adjust this path based on what the upstream flake names its HM module
     ];
 

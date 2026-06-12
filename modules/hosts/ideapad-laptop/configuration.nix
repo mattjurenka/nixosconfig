@@ -1,7 +1,13 @@
 { self, inputs, ... }: {
-  flake.nixosModules.ideapadLaptopConfiguration = { pkgs, lib, ... }: {
+  flake.nixosModules.ideapadLaptopConfiguration = { pkgs, lib, ... }: 
+  let
+    # Pull the compiled binary straight out of the flake inputs
+    noctaliaGreeterPkg = inputs.noctalia-greeter.packages.${pkgs.stdenv.hostPlatform.system}.default;
+  in
+  {
     imports = [
       self.nixosModules.ideapadLaptopHardware
+      inputs.noctalia-greeter.nixosModules.default
     ];
     home-manager.users.matthew = self.homeModules.matthewModule;
 
@@ -22,9 +28,17 @@
 
     hardware.graphics.enable = true;
 
-    services.displayManager.sddm = {
+    services.greetd = {
       enable = true;
-      wayland.enable = true;
+      settings = {
+        default_session = {
+          user = "greeter";
+        };
+      };
+    };
+
+    programs.noctalia-greeter = {
+      enable = true;
     };
 
     #locales
@@ -128,6 +142,8 @@
       pulse.enable = true;
       wireplumber.enable = true;
     };
+
+    system.stateVersion = "26.11";
 
   };
 

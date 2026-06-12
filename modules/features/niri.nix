@@ -18,10 +18,13 @@
         input.keyboard.xkb.layout = "us";
         input.keyboard.xkb.options = "caps:escape";
 
-        layout.gaps = 16;
+        layout.gaps = 8;
 
         binds = {
           "Mod+Return".spawn-sh = "kitty";
+          "Mod+B".spawn-sh = "chromium";
+          "Mod+C".spawn-sh = "vscode";
+
           "Mod+Q".close-window = {};
           "Mod+Space".spawn-sh = "${lib.getExe inputs'.noctalia.packages.default} msg panel-toggle launcher";
           "Mod+S".spawn-sh = "${lib.getExe inputs'.noctalia.packages.default} msg screenshot-region";
@@ -30,6 +33,20 @@
           "Mod+F".fullscreen-window = {};
           "Mod+M".maximize-column = {};
 
+          "XF86AudioRaiseVolume".spawn-sh = "${lib.getExe inputs'.noctalia.packages.default} msg volume-up";
+          "XF86AudioLowerVolume".spawn-sh = "${lib.getExe inputs'.noctalia.packages.default} msg volume-down";
+          "XF86AudioMute".spawn-sh = "${lib.getExe inputs'.noctalia.packages.default} msg volume-mute";
+          
+          "XF86AudioMicMute".spawn-sh = "${lib.getExe inputs'.noctalia.packages.default} msg mic-mute";
+
+          "XF86MonBrightnessUp".spawn-sh = "${lib.getExe inputs'.noctalia.packages.default} msg brightness-up";
+          "XF86MonBrightnessDown".spawn-sh = "${lib.getExe inputs'.noctalia.packages.default} msg brightness-down";
+
+          # Media Controls
+          "XF86AudioPlay".spawn-sh = "${lib.getExe inputs'.noctalia.packages.default} msg media toggle";
+          "XF86AudioStop".spawn-sh = "${lib.getExe inputs'.noctalia.packages.default} msg media stop";
+          "XF86AudioPrev".spawn-sh = "${lib.getExe inputs'.noctalia.packages.default} msg media previous";
+          "XF86AudioNext".spawn-sh = "${lib.getExe inputs'.noctalia.packages.default} msg media next";
 
           "Mod+Shift+H".move-column-left = {};
           "Mod+Shift+J".move-window-down = {};

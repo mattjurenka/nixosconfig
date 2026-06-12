@@ -28,13 +28,15 @@
     programs.vscode = {
       enable = true;
       
-      extensions = with pkgs.vscode-extensions; [
-        jnoortheen.nix-ide
-      ];
-      
-      profiles.default.userSettings = {
-        "nix.enableLanguageServer" = true;
-        "nix.serverPath" = "nil";
+      profiles.default = {
+        extensions = with pkgs.vscode-extensions; [
+          jnoortheen.nix-ide
+        ];
+
+        userSettings = {
+          "nix.enableLanguageServer" = true;
+          "nix.serverPath" = "nil";
+        };
       };
     };
   
@@ -47,6 +49,14 @@
       enable = true;
     };
 
+    programs.yazi = {
+      enable = true;
+      enableBashIntegration = true;
+      shellWrapperName = "y";
+    };
+
+    programs.obs-studio.enable = true;
+
     home.packages = with pkgs; [
       ripgrep
       gemini-cli
@@ -54,8 +64,12 @@
       nil
       loupe
       cmatrix
+      discord
     ];
     home.stateVersion = "24.11";
   };
 
 }
+
+#TODO:
+# test out rust devshell
