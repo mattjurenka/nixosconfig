@@ -65,7 +65,9 @@
       loupe
       cmatrix
       discord
+      telegram-desktop
     ];
+
     home.stateVersion = "24.11";
   };
 
