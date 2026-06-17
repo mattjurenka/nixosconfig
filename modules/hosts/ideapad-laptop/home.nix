@@ -31,11 +31,13 @@
       profiles.default = {
         extensions = with pkgs.vscode-extensions; [
           jnoortheen.nix-ide
+          vscodevim.vim
         ];
 
         userSettings = {
           "nix.enableLanguageServer" = true;
           "nix.serverPath" = "nil";
+          "keyboard.dispatch" = "keyCode";
         };
       };
     };
@@ -53,6 +55,13 @@
       enable = true;
       enableBashIntegration = true;
       shellWrapperName = "y";
+    };
+
+    programs.chromium = {
+      enable = true;
+      extensions = [
+        { id = "bfnaelmomeimhlpmgjnjophhpkkoljpa"; } # Phantom
+      ];
     };
 
     programs.obs-studio.enable = true;

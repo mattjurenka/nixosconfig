@@ -15,8 +15,21 @@
         ];
 
         xwayland-satellite.path = lib.getExe pkgs.xwayland-satellite;
-        input.keyboard.xkb.layout = "us";
-        input.keyboard.xkb.options = "caps:escape";
+
+        input = {
+          keyboard.xkb = {
+            layout = "us";
+            options = "caps:escape";
+          };
+
+          touchpad = {
+            accel-speed = 0.0;
+            accel-profile = "flat";
+
+            tap = {};
+            natural-scroll = {};
+          };
+        };
 
         layout.gaps = 8;
 
