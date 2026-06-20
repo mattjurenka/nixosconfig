@@ -1,0 +1,24 @@
+id           = "jurenka-software/devbox"
+name         = "AWS Dev Box Controller"
+version      = "1.0.0"
+min_noctalia = "5.0.0"
+author       = "matthew"
+license      = "MIT"
+icon         = "server"
+description  = "Monitors and toggles an AWS EC2 Developer Instance."
+
+[[widget]]
+id    = "control"
+entry = "widget.luau"
+
+  [[widget.setting]]
+  key     = "instance_id"
+  type    = "string"
+  label   = "Instance ID"
+  default = "i-07f875a0b9cf40d98"
+
+  [[widget.setting]]
+  key     = "region"
+  type    = "string"
+  label   = "AWS Region"
+  default = "ap-southeast-1"

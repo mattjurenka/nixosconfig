@@ -31,7 +31,10 @@
           };
         };
 
-        layout.gaps = 8;
+        prefer-no-csd = {};
+	      layout = {
+          gaps = 8;
+        };
 
         binds = {
           "Mod+Return".spawn-sh = "kitty";

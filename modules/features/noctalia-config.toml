@@ -101,3 +101,16 @@ type = "spacer"
 
 [widget.workspaces]
 capsule = true
+
+[plugins]
+enabled = ["jurenka-software/devbox:devbox"]
+
+[[plugins.source]]
+name = "devbox"
+kind = "path"
+location = "~/jurenka-nixos-config/noctalia-aws"
+
+[[bar.widgets]]
+type = "jurenka-software/devbox:devbox"
+instance_id = "i-07f875a0b9cf40d98"
+region = "ap-southeast-1"
