@@ -16,13 +16,7 @@
 
   # This is your home.nix, your module where you configure home-manager
   # It's imported both in standalone configuration above, and in your nixos configuration
-  flake.homeModules.matthewModule = { pkgs, ... }: let
-      aws-box-controller = pkgs.writeShellApplication {
-        name = "noctalia-aws";
-        runtimeInputs = [ pkgs.awscli2 pkgs.libnotify pkgs.coreutils ];
-        text = builtins.readFile ../../features/noctalia-aws.sh;
-      };
-    in {
+  flake.homeModules.matthewModule = { pkgs, ... }: {
     imports = [
       config.flake.modules.homeManager.noctalia
       inputs.spicetify-nix.homeManagerModules.default
@@ -41,6 +35,7 @@
           vscodevim.vim
           ms-vscode-remote.remote-ssh
           ms-vscode.remote-explorer
+          bradlc.vscode-tailwindcss
         ];
 
         userSettings = {
@@ -116,7 +111,6 @@
       discord
       telegram-desktop
       awscli2
-      aws-box-controller
       jq
     ];
 

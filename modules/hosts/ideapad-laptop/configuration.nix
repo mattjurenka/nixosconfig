@@ -26,7 +26,13 @@
 
     nixpkgs.config.allowUnfree = true;
 
-    hardware.graphics.enable = true;
+    hardware.graphics = {
+      enable = true;
+      enable32Bit = true;
+      extraPackages32 = with pkgs.pkgsi686Linux; [
+        libGLU
+      ];
+    };
 
     services.greetd = {
       enable = true;
@@ -42,7 +48,7 @@
     };
 
     #locales
-    time.timeZone = "Asia/Shanghai";
+    time.timeZone = "America/Phoenix";
     i18n.defaultLocale = "en_US.UTF-8";
     
     # Configure network connections interactively with nmcli or nmtui.
@@ -65,7 +71,17 @@
       android-tools
       wget
       upower
+      libGLU
     ];
+
+    programs.steam = {
+      enable = true;
+    };
+    programs.steam.package = pkgs.steam.override {
+      extraPkgs = pkgs': with pkgs'; [
+        libGLU
+      ];
+    };
 
     fonts.packages = with pkgs; [
       nerd-fonts.jetbrains-mono
@@ -82,7 +98,10 @@
 
     services.upower.enable = true;
 
-    networking.proxy.default = "http://127.0.0.1:10809";
+    # XRAY proxy
+    # networking.proxy.default = "http://127.0.0.1:10809";
+    # USDB https proxy
+    # networking.proxy.default = "http://172.19.252.11:8080";
     networking.proxy.noProxy = "127.0.0.1,localhost";
 
     users.users = {
@@ -91,6 +110,8 @@
         isNormalUser = true;
         extraGroups = [
           "wheel"
+          "video"
+          "render"
         ];
       };
       root = {
@@ -146,81 +167,13 @@
       wireplumber.enable = true;
     };
 
-    services.xray = {
-      enable = true;
-      settings = {
-        log = {
-          loglevel = "warning";
-        };
-        inbounds = [
-          {
-            # This opens a local SOCKS proxy on your machine
-            listen = "127.0.0.1";
-            port = 10808;
-            protocol = "socks";
-            settings = {
-              udp = true;
-            };
-          }
-          {
-            # This opens a local HTTP proxy on your machine
-            listen = "127.0.0.1";
-            port = 10809;
-            protocol = "http";
-          }
-        ];
-        outbounds = [
-          {
-            protocol = "vless";
-            settings = {
-              vnext = [
-                {
-                  address = "47.76.156.171";
-                  #address = "18.140.57.219";
-                  port = 443;
-                  users = [
-                    {
-                      id = "17fa067b-c5ba-45d9-ab49-88b0c479634c";
-                      #id = "9fcb4cba-3efa-4b7f-a79e-3a675778b471";
-                      encryption = "none";
-                      flow = "xtls-rprx-vision";
-                    }
-                  ];
-                }
-              ];
-            };
-            streamSettings = {
-              network = "tcp";
-              security = "reality";
-              realitySettings = {
-                show = false;
-                fingerprint = "chrome"; # Mimics Chrome TLS fingerprint
-                serverName = "www.microsoft.com";
-                publicKey = "rOpqPdA0Bs_UQz68vFWfvxqFm96AuTu1JbsfnCQLRFM";
-                #publicKey = "wQuKrA7d0BtWFvEjy5s8fqBY_pKBoaT2y5Is9YPdiDM";
-                shortId = "0123456789abcdef";
-              };
-            };
-            tag = "proxy";
-          }
-          {
-            protocol = "freedom";
-            tag = "direct";
-          }
-        ];
-        # Optional routing rules so local traffic bypasses the proxy
-        routing = {
-          domainStrategy = "IPIfNonMatch";
-          rules = [
-            {
-              type = "field";
-              ip = [ "geoip:private" ];
-              outboundTag = "direct";
-            }
-          ];
-        };
-      };
-    };
+    programs.nix-ld.enable = true;
+    programs.nix-ld.libraries = with pkgs; [
+      stdenv.cc.cc
+      openssl
+      zlib
+      # Bun specific dependencies if needed, though cc and openssl usually cover it
+    ];
 
     system.stateVersion = "26.11";
 
