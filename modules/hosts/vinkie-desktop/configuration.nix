@@ -1,5 +1,5 @@
 { self, inputs, ... }: {
-  flake.nixosModules.vinkieDesktopConfiguration = { pkgs, lib, ... }: 
+  flake.nixosModules.vinkieDesktopConfiguration = { pkgs, lib, config, ... }: 
   let
     # Pull the compiled binary straight out of the flake inputs
     noctaliaGreeterPkg = inputs.noctalia-greeter.packages.${pkgs.stdenv.hostPlatform.system}.default;
@@ -26,11 +26,27 @@
 
     nixpkgs.config.allowUnfree = true;
 
+    # Load NVIDIA driver for Xorg and Wayland
+    services.xserver.videoDrivers = [ "nvidia" ];
+
+    hardware.nvidia = {
+      # Modesetting is required for Wayland / modern compositors
+      modesetting.enable = true;
+      
+      # Set driver package (production, latest, stable, or beta)
+      package = config.boot.kernelPackages.nvidiaPackages.stable;
+
+      open = true;
+
+      # Enable settings menu
+      nvidiaSettings = true;
+    };
+
     hardware.graphics = {
       enable = true;
       enable32Bit = true;
-      extraPackages32 = with pkgs.pkgsi686Linux; [
-        libGLU
+      extraPackages = with pkgs; [
+        nvidia-vaapi-driver
       ];
     };
 
