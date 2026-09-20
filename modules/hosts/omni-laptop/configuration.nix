@@ -1,12 +1,12 @@
 { self, inputs, ... }: {
-  flake.nixosModules.vinkieDesktopConfiguration = { pkgs, lib, config, ... }: 
+  flake.nixosModules.omniLaptopConfiguration = { pkgs, lib, config, ... }: 
   let
     # Pull the compiled binary straight out of the flake inputs
     noctaliaGreeterPkg = inputs.noctalia-greeter.packages.${pkgs.stdenv.hostPlatform.system}.default;
   in
   {
     imports = [
-      self.nixosModules.vinkieDesktopHardware
+      self.nixosModules.omniLaptopHardware
       inputs.noctalia-greeter.nixosModules.default
     ];
     home-manager.users.matthew = self.homeModules.matthewModule;
@@ -15,8 +15,6 @@
     boot.loader = {
       systemd-boot = {
         enable = true;
-        #device = "nodev";
-        #efiSupport = true;
       };
       efi = {
         canTouchEfiVariables = true;
@@ -26,28 +24,10 @@
 
     nixpkgs.config.allowUnfree = true;
 
-    # Load NVIDIA driver for Xorg and Wayland
-    services.xserver.videoDrivers = [ "nvidia" ];
-
-    hardware.nvidia = {
-      # Modesetting is required for Wayland / modern compositors
-      modesetting.enable = true;
-      
-      # Set driver package (production, latest, stable, or beta)
-      package = config.boot.kernelPackages.nvidiaPackages.stable;
-
-      open = true;
-
-      # Enable settings menu
-      nvidiaSettings = true;
-    };
-
+    # Radeon 840M integrated graphics (AMD Ryzen AI 7 445) - handled by mesa/amdgpu.
     hardware.graphics = {
       enable = true;
       enable32Bit = true;
-      extraPackages = with pkgs; [
-        nvidia-vaapi-driver
-      ];
     };
 
     services.greetd = {
@@ -70,7 +50,7 @@
     # Configure network connections interactively with nmcli or nmtui.
     networking = {
       networkmanager.enable = true;
-      hostName = "vinkie-desktop";
+      hostName = "omni-laptop";
     };
 
     #QEMU-specific
@@ -192,7 +172,7 @@
       # Bun specific dependencies if needed, though cc and openssl usually cover it
     ];
 
-    system.stateVersion = "26.11";
+    system.stateVersion = "26.05";
 
   };
 

@@ -63,7 +63,8 @@
    
     environment.systemPackages = with pkgs; [
       vim
-      gimp
+      (gimp-with-plugins.override { plugins = with gimpPlugins; [ gmic ]; })
+      gmic
       git
       zip
       unzip
