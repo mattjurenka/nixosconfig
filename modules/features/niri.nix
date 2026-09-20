@@ -29,6 +29,11 @@
             tap = {};
             natural-scroll = {};
           };
+
+          mouse = {
+            accel-speed = 0.0;
+            accel-profile = "flat";
+          };
         };
 
         prefer-no-csd = {};
