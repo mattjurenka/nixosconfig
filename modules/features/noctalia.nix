@@ -3,6 +3,35 @@
 
 let 
   baseSettings = builtins.fromTOML (builtins.readFile ./noctalia-config.toml);
+
+  # Noctalia colour roles -> stylix base16 slots. Shared by the shell palette
+  # and the greeter so the login screen matches the desktop.
+  paletteRoles = {
+    primary            = "base0B";
+    on_primary         = "base00";
+    secondary          = "base0D";
+    on_secondary       = "base00";
+    tertiary           = "base0E";
+    on_tertiary        = "base00";
+    error              = "base08";
+    on_error           = "base00";
+    surface            = "base00";
+    on_surface         = "base05";
+    surface_variant    = "base02";
+    on_surface_variant = "base04";
+    outline            = "base03";
+    shadow             = "base0F";
+    hover              = "base01";
+    on_hover           = "base06";
+  };
+
+  # The greeter uses the role names as-is; the shell wants e.g. mOnSurfaceVariant.
+  capitalize = s: lib.toUpper (lib.substring 0 1 s) + lib.substring 1 (-1) s;
+  shellRoleName = role: "m" + lib.concatMapStrings capitalize (lib.splitString "_" role);
+
+  mkPalette = sc: nameFn: lib.mapAttrs' (role: base:
+    lib.nameValuePair (nameFn role) "#${sc.${base}}"
+  ) paletteRoles;
 in
 {
   # Every file in the dendritic pattern is strictly a top-level flake-parts module.
@@ -20,23 +49,7 @@ in
       sc = config.lib.stylix.colors;
       hash = hex: "#${hex}";
     in builtins.toJSON {
-      dark = {
-        mPrimary           = hash sc.base0B;
-        mOnPrimary         = hash sc.base00;
-        mSecondary         = hash sc.base0D;
-        mOnSecondary       = hash sc.base00; 
-        mTertiary          = hash sc.base0E;
-        mOnTertiary        = hash sc.base00;
-        mError             = hash sc.base08;
-        mOnError           = hash sc.base00;
-        mSurface           = hash sc.base00;
-        mOnSurface         = hash sc.base05;
-        mSurfaceVariant    = hash sc.base02;
-        mOnSurfaceVariant  = hash sc.base04;
-        mOutline           = hash sc.base03;
-        mShadow            = hash sc.base0F;
-        mHover             = hash sc.base01;
-        mOnHover           = hash sc.base06;
+      dark = mkPalette sc shellRoleName // {
         
         terminal = {
           background       = hash sc.base00;
@@ -89,6 +102,39 @@ in
       };
     };
 
+  };
+
+  # The greeter runs before any user session, so it can't see the shell's
+  # palette. It reads only the manifest that the shell's "Sync Now" button
+  # writes, so generate that manifest from the same stylix colours instead.
+  config.flake.nixosModules.noctaliaGreeterAppearance = { config, pkgs, ... }: let
+    appearance = pkgs.writeText "noctalia-greeter-appearance.json" (builtins.toJSON {
+      version = 1;
+      theme_mode = "dark";
+      palette = mkPalette config.lib.stylix.colors lib.id;
+      wallpaper = {
+        path = "${./wallpaper.webp}";
+        fill_mode = "crop";
+      };
+    });
+  in {
+    systemd.tmpfiles.settings."11-noctalia-greeter-appearance" = {
+      "/var/lib/noctalia-greeter/appearance.json"."L+".argument = "${appearance}";
+    };
+
+    # The greeter remembers the last colour scheme in greeter.conf and saves it
+    # on every login, so a "Noctalia" choice from before the manifest existed
+    # sticks forever. Reset it to the manifest's scheme each time greetd starts.
+    systemd.services.greetd.preStart = let
+      user = config.services.greetd.settings.default_session.user;
+    in ''
+      conf=/var/lib/noctalia-greeter/greeter.conf
+      touch "$conf"
+      ${pkgs.gnused}/bin/sed -i '/^[[:space:]]*scheme[[:space:]]*=/d' "$conf"
+      echo 'scheme=Synced' >> "$conf"
+      chown ${user}: "$conf"
+      chmod 0644 "$conf"
+    '';
   };
 }
 

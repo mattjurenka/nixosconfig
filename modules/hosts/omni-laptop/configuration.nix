@@ -43,6 +43,14 @@
       enable = true;
     };
 
+    # Xiaomi Mi USB Receiver Mouse: 1200 DPI in hardware, scaled down to
+    # my.mouse.targetDpi (800) so it matches every other mouse.
+    my.mouse.hardwareDpi = 1200;
+
+    # Isolated browser VM: tap device, host-side firewall and the read-only
+    # drop box it shares. The VM itself is nixosConfigurations.claude-vm.
+    my.claudeVm.enable = true;
+
     #locales
     time.timeZone = "America/Phoenix";
     i18n.defaultLocale = "en_US.UTF-8";
@@ -50,6 +58,14 @@
     # Configure network connections interactively with nmcli or nmtui.
     networking = {
       networkmanager.enable = true;
+      # NetworkManager resets Wi-Fi power saving on every connect, so re-apply
+      # the charger-based setting (see ac-power-switch below).
+      networkmanager.dispatcherScripts = [{
+        source = pkgs.writeShellScript "ac-power-switch-on-connect" ''
+          [ "$2" = "up" ] && ${pkgs.systemd}/bin/systemctl start --no-block ac-power-switch.service
+          exit 0
+        '';
+      }];
       hostName = "omni-laptop";
     };
 
@@ -74,6 +90,11 @@
     programs.steam = {
       enable = true;
     };
+    # For CS2: renders at a lower res inside a native-res fullscreen window,
+    # and owns mouse input so XWayland pointer warping doesn't fight the aim.
+    programs.gamescope.enable = true;
+    # Launch with `gamemoderun` to switch to performance power settings while in-game.
+    programs.gamemode.enable = true;
     programs.steam.package = pkgs.steam.override {
       extraPkgs = pkgs': with pkgs'; [
         libGLU
@@ -136,6 +157,32 @@
     };
 
     services.power-profiles-daemon.enable = true;
+
+    # On charger: performance profile + Wi-Fi power saving off (it adds ping spikes).
+    # On battery: balanced profile + Wi-Fi power saving on.
+    systemd.services.ac-power-switch = {
+      description = "Switch power profile and Wi-Fi power saving on charger state";
+      after = [ "power-profiles-daemon.service" ];
+      wants = [ "power-profiles-daemon.service" ];
+      wantedBy = [ "multi-user.target" ];
+      path = [ config.services.power-profiles-daemon.package pkgs.iw ];
+      serviceConfig.Type = "oneshot";
+      script = ''
+        if [ "$(cat /sys/class/power_supply/ACAD/online)" = 1 ]; then
+          profile=performance; wifi_ps=off
+        else
+          profile=balanced; wifi_ps=on
+        fi
+        powerprofilesctl set "$profile"
+        for dev in /sys/class/net/*/wireless; do
+          [ -e "$dev" ] || continue
+          iw dev "$(basename "$(dirname "$dev")")" set power_save "$wifi_ps" || true
+        done
+      '';
+    };
+    services.udev.extraRules = ''
+      SUBSYSTEM=="power_supply", KERNEL=="ACAD", RUN+="${pkgs.systemd}/bin/systemctl start --no-block ac-power-switch.service"
+    '';
     hardware.bluetooth = {
       enable = true;
       powerOnBoot = true;

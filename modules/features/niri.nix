@@ -1,17 +1,38 @@
 { self, inputs, ... }: {
-  flake.nixosModules.niri = { pkgs, lib, ... }: {
+  flake.nixosModules.niri = { pkgs, lib, config, ... }: {
+    imports = [ self.nixosModules.mouse ];
+
     programs.niri = {
       enable = true;
-      package = self.packages.${pkgs.stdenv.hostPlatform.system}.myNiri;
+      # Built here rather than pulled from self.packages, so that the mouse
+      # scaling can follow this host's my.mouse settings.
+      package = self.lib.mkNiri {
+        inherit pkgs lib;
+        mouseAccelSpeed = config.my.mouse.accelSpeed;
+      };
     };
   };
 
-  perSystem = { pkgs, lib, self', inputs', ... }: {
-    packages.myNiri = inputs.wrapper-modules.wrappers.niri.wrap {
+  # Keeps `nix build .#myNiri` working, at the unscaled default.
+  perSystem = { pkgs, lib, ... }: {
+    packages.myNiri = self.lib.mkNiri { inherit pkgs lib; };
+  };
+
+  flake.lib.mkNiri =
+    { pkgs
+    , lib
+    , # libinput flat-profile scale for mice; 0.0 is 1:1 with the hardware.
+      # See my.mouse in modules/features/mouse.nix.
+      mouseAccelSpeed ? 0.0
+    }:
+    let
+      noctalia = inputs.noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default;
+    in
+    inputs.wrapper-modules.wrappers.niri.wrap {
       inherit pkgs;
       settings = {
         spawn-at-startup = [
-          (lib.getExe inputs'.noctalia.packages.default)
+          (lib.getExe noctalia)
         ];
 
         xwayland-satellite.path = lib.getExe pkgs.xwayland-satellite;
@@ -31,6 +52,21 @@
           };
 
           mouse = {
+            # Normalise every mouse to my.mouse.targetDpi, so the same hand
+            # movement covers the same distance on screen no matter what the
+            # hardware DPI underneath is.
+            accel-speed = mouseAccelSpeed;
+            accel-profile = "flat";
+          };
+
+          # libinput sorts some pointers into their own classes, which would
+          # otherwise fall back to the adaptive (accelerated) profile.
+          trackball = {
+            accel-speed = 0.0;
+            accel-profile = "flat";
+          };
+
+          trackpoint = {
             accel-speed = 0.0;
             accel-profile = "flat";
           };
@@ -47,27 +83,27 @@
           "Mod+C".spawn-sh = "vscode";
 
           "Mod+Q".close-window = {};
-          "Mod+Space".spawn-sh = "${lib.getExe inputs'.noctalia.packages.default} msg panel-toggle launcher";
-          "Mod+S".spawn-sh = "${lib.getExe inputs'.noctalia.packages.default} msg screenshot-region";
+          "Mod+Space".spawn-sh = "${lib.getExe noctalia} msg panel-toggle launcher";
+          "Mod+S".spawn-sh = "${lib.getExe noctalia} msg screenshot-region";
           "Mod+Tab".toggle-overview = {};
           
           "Mod+F".fullscreen-window = {};
           "Mod+M".maximize-column = {};
 
-          "XF86AudioRaiseVolume".spawn-sh = "${lib.getExe inputs'.noctalia.packages.default} msg volume-up";
-          "XF86AudioLowerVolume".spawn-sh = "${lib.getExe inputs'.noctalia.packages.default} msg volume-down";
-          "XF86AudioMute".spawn-sh = "${lib.getExe inputs'.noctalia.packages.default} msg volume-mute";
+          "XF86AudioRaiseVolume".spawn-sh = "${lib.getExe noctalia} msg volume-up";
+          "XF86AudioLowerVolume".spawn-sh = "${lib.getExe noctalia} msg volume-down";
+          "XF86AudioMute".spawn-sh = "${lib.getExe noctalia} msg volume-mute";
           
-          "XF86AudioMicMute".spawn-sh = "${lib.getExe inputs'.noctalia.packages.default} msg mic-mute";
+          "XF86AudioMicMute".spawn-sh = "${lib.getExe noctalia} msg mic-mute";
 
-          "XF86MonBrightnessUp".spawn-sh = "${lib.getExe inputs'.noctalia.packages.default} msg brightness-up";
-          "XF86MonBrightnessDown".spawn-sh = "${lib.getExe inputs'.noctalia.packages.default} msg brightness-down";
+          "XF86MonBrightnessUp".spawn-sh = "${lib.getExe noctalia} msg brightness-up";
+          "XF86MonBrightnessDown".spawn-sh = "${lib.getExe noctalia} msg brightness-down";
 
           # Media Controls
-          "XF86AudioPlay".spawn-sh = "${lib.getExe inputs'.noctalia.packages.default} msg media toggle";
-          "XF86AudioStop".spawn-sh = "${lib.getExe inputs'.noctalia.packages.default} msg media stop";
-          "XF86AudioPrev".spawn-sh = "${lib.getExe inputs'.noctalia.packages.default} msg media previous";
-          "XF86AudioNext".spawn-sh = "${lib.getExe inputs'.noctalia.packages.default} msg media next";
+          "XF86AudioPlay".spawn-sh = "${lib.getExe noctalia} msg media toggle";
+          "XF86AudioStop".spawn-sh = "${lib.getExe noctalia} msg media stop";
+          "XF86AudioPrev".spawn-sh = "${lib.getExe noctalia} msg media previous";
+          "XF86AudioNext".spawn-sh = "${lib.getExe noctalia} msg media next";
 
           "Mod+Shift+H".move-column-left = {};
           "Mod+Shift+J".move-window-down = {};
@@ -102,5 +138,4 @@
         };
       };
     };
-  };
 }

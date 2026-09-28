@@ -63,6 +63,11 @@
       enable = true;
     };
 
+    # Pointer motion is normalised to my.mouse.targetDpi (800 by default).
+    # Set this to the real DPI of the mouse used on this host, read off its
+    # spec sheet or its configuration software.
+    # my.mouse.hardwareDpi = 1200;
+
     #locales
     time.timeZone = "America/Phoenix";
     i18n.defaultLocale = "en_US.UTF-8";
