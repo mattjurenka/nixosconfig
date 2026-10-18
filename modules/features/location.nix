@@ -12,7 +12,11 @@
 # are needed on every cold boot, by a feature whose whole job is to be correct
 # the moment the screen lights up.
 { ... }: {
-  flake.modules.homeManager.location = { lib, ... }: {
+  # The generic class rather than homeManager: this is the Constants Aspect --
+  # nothing but options and their values -- and generic modules carry no class,
+  # so a NixOS module can read my.location too if one ever needs to. Today only
+  # the Home Manager side does, through matthew-home.nix.
+  flake.modules.generic.location = { lib, ... }: {
     options.my.location = {
       latitude = lib.mkOption {
         type = lib.types.float;

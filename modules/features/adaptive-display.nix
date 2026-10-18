@@ -173,10 +173,6 @@
     in
     {
       options.my.adaptiveDisplay = {
-        enable = lib.mkEnableOption "a backlight that follows the sun" // {
-          default = true;
-        };
-
         dayBrightness = lib.mkOption {
           type = lib.types.float;
           default = 1.0;
@@ -258,7 +254,10 @@
         };
       };
 
-      config = lib.mkIf cfg.enable {
+      # No `enable` option: in this tree a feature is on because a host
+      # imported it, and this one defaulted to true anyway -- so the flag was
+      # a second switch wired permanently closed behind the first.
+      config = {
         # Both worth having on PATH. Run the service's script in a terminal and
         # it prints the sun's elevation and the curve's verdict on every tick,
         # which is the whole story when the screen is at a brightness that

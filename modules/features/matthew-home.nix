@@ -25,7 +25,7 @@
       # my.location, read by both halves of adaptive display: noctalia's night
       # light for colour temperature and the sun-following backlight curve for
       # brightness. Must come in alongside them, not instead of them.
-      config.flake.modules.homeManager.location
+      config.flake.modules.generic.location
       config.flake.modules.homeManager.adaptiveDisplay
       # Zed with Claude Code in its agent panel; see modules/features/zed.nix.
       config.flake.modules.homeManager.zed

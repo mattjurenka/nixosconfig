@@ -1128,8 +1128,6 @@
     in
     {
       options.my.agentVms = {
-        enable = lib.mkEnableOption "host-side plumbing for the isolated agent VMs";
-
         owner = lib.mkOption {
           type = lib.types.str;
           default = "matthew";
@@ -1400,7 +1398,10 @@
         };
       };
 
-      config = lib.mkIf cfg.enable {
+      # No `enable` option: omni-laptop is the only host that imports this
+      # aspect, and importing it is what asking for agent VMs means. An
+      # instance set of `{ }` already configures nothing.
+      config = {
         assertions = [
           {
             assertion = lib.all

@@ -79,7 +79,6 @@
     # cannot reach, and the read-only drop boxes they share. The guests
     # themselves are nixosConfigurations.claude-vm and .brain-vm.
     my.agentVms = {
-      enable = true;
       instances = {
         # The browser: its job is the web, so it gets the public internet (and
         # nothing on this LAN). Started by hand with `claude-vm`.
