@@ -1,17 +1,10 @@
-{ self, inputs, ... }: {
-  flake.modules.nixos.ideapadLaptopConfiguration = { pkgs, lib, ... }: 
-  let
-    # Pull the compiled binary straight out of the flake inputs
-    noctaliaGreeterPkg = inputs.noctalia-greeter.packages.${pkgs.stdenv.hostPlatform.system}.default;
-  in
-  {
-    imports = [
-      self.modules.nixos.ideapadLaptopHardware
-      inputs.noctalia-greeter.nixosModules.default
-    ];
-    home-manager.users.matthew = self.modules.homeManager.matthewModule;
+{ self, ... }: {
+  flake.modules.nixos.ideapadLaptopConfiguration = { pkgs, ... }: {
+    imports = [ self.modules.nixos.ideapadLaptopHardware ];
 
-    # Use the systemd-boot EFI boot loader.
+    # GRUB in EFI mode rather than systemd-boot, which is what the other two
+    # hosts use: this disk was installed with it and there is nothing to gain
+    # from converting it.
     boot.loader = {
       grub = {
         enable = true;
@@ -24,165 +17,19 @@
       };
     };
 
-    nixpkgs.config.allowUnfree = true;
-
-    hardware.graphics = {
-      enable = true;
-      enable32Bit = true;
-      extraPackages32 = with pkgs.pkgsi686Linux; [
-        libGLU
-      ];
-    };
-
-    services.greetd = {
-      enable = true;
-      settings = {
-        default_session = {
-          user = "greeter";
-        };
-      };
-    };
-
-    programs.noctalia-greeter = {
-      enable = true;
-    };
+    # On top of the `hardware.graphics` base in workstation.nix: 32-bit GLU for
+    # the Steam runtime on this machine.
+    hardware.graphics.extraPackages32 = with pkgs.pkgsi686Linux; [
+      libGLU
+    ];
 
     # Pointer motion is normalised to my.mouse.targetDpi (800 by default).
     # Set this to the real DPI of the mouse used on this host, read off its
     # spec sheet or its configuration software.
     # my.mouse.hardwareDpi = 1200;
 
-    #locales
-    time.timeZone = "America/Phoenix";
-    i18n.defaultLocale = "en_US.UTF-8";
-    
-    # Configure network connections interactively with nmcli or nmtui.
-    networking = {
-      networkmanager.enable = true;
-      hostName = "jurenka-laptop";
-    };
-
-    #QEMU-specific
-    services.spice-vdagentd.enable = true;
-    services.qemuGuest.enable = true;
-   
-    environment.systemPackages = with pkgs; [
-      vim
-      (gimp-with-plugins.override { plugins = with gimpPlugins; [ gmic ]; })
-      gmic
-      git
-      zip
-      unzip
-      btop
-      android-tools
-      wget
-      upower
-      libGLU
-    ];
-
-    programs.steam = {
-      enable = true;
-    };
-    programs.steam.package = pkgs.steam.override {
-      extraPkgs = pkgs': with pkgs'; [
-        libGLU
-      ];
-    };
-
-    fonts.packages = with pkgs; [
-      nerd-fonts.jetbrains-mono
-      noto-fonts
-      noto-fonts-cjk-sans
-      noto-fonts-cjk-serif
-      noto-fonts-color-emoji
-      twemoji-color-font
-    ];
-
-    fonts.fontconfig.defaultFonts = {
-      monospace = [ "JetBrainsMono NF" ];
-    };
-
-    services.upower.enable = true;
-
-    # XRAY proxy
-    # networking.proxy.default = "http://127.0.0.1:10809";
-    # USDB https proxy
-    # networking.proxy.default = "http://172.19.252.11:8080";
-    networking.proxy.noProxy = "127.0.0.1,localhost";
-
-    users.users = {
-      matthew = {
-        createHome = true;
-        isNormalUser = true;
-        extraGroups = [
-          "wheel"
-          "video"
-          "render"
-        ];
-      };
-      root = {
-        extraGroups = [ "wheel" ];
-      };
-    };
-
-    nix.settings.experimental-features = [ "nix-command" "flakes" ];
-
-    programs.git = {
-      enable = true;
-      
-      # Set your default global identity configurations
-      config = {
-        user = {
-          name = "Matt Jurenka";
-          email = "matt.jurenka@comcast.net";
-        };
-        
-        # Optional but highly recommended helper settings:
-        init = {
-          defaultBranch = "main";
-        };
-      };
-    };
-
-    services.power-profiles-daemon.enable = true;
-    hardware.bluetooth = {
-      enable = true;
-      powerOnBoot = true;
-      settings = {
-        General = {
-          # Enables A2DP Sink, Media, and lower-level profiles
-          Enable = "Source,Sink,Media,Socket";
-          # Speeds up connection handshakes 
-          FastConnectable = true;
-          # Keeps battery status updating accurately in Noctalia
-          Experimental = true;
-          AutoConnect = true;
-          JustWorksRepairing = "always";
-        };
-        Policy = {
-          AutoEnable = true;
-        };
-      };
-    };
-    
-    # Ensure the Pipewire Bluetooth audio backend is enabled
-    services.pipewire = {
-      enable = true;
-      alsa.enable = true;
-      pulse.enable = true;
-      wireplumber.enable = true;
-    };
-
-    programs.nix-ld.enable = true;
-    programs.nix-ld.libraries = with pkgs; [
-      stdenv.cc.cc
-      openssl
-      zlib
-      # Bun specific dependencies if needed, though cc and openssl usually cover it
-    ];
+    networking.hostName = "jurenka-laptop";
 
     system.stateVersion = "26.11";
-
   };
-
 }
