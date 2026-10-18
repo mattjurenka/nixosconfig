@@ -171,17 +171,7 @@ capsule = true
 # this one entirely, so a plugin named only here is never discovered and
 # nothing reports it. modules/features/adaptive-display.nix registers and
 # enables it over IPC instead, which writes the state the shell actually reads.
-enabled = ["jurenka-software/devbox:devbox", "jurenka/claude-status"]
-
-[[plugins.source]]
-name = "devbox"
-kind = "path"
-location = "~/jurenka-nixos-config/noctalia-aws"
-
-[[bar.widgets]]
-type = "jurenka-software/devbox:devbox"
-instance_id = "i-07f875a0b9cf40d98"
-region = "ap-southeast-1"
+enabled = ["jurenka/claude-status"]
 
 # Paired with modules/features/claude-status, which generates the plugin into
 # that location: a bar glyph coloured by whether any Claude Code session -- a
