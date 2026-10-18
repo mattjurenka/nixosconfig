@@ -1,6 +1,6 @@
 { self, inputs, ... }: {
-  flake.nixosModules.niri = { pkgs, lib, config, ... }: {
-    imports = [ self.nixosModules.mouse ];
+  flake.modules.nixos.niri = { pkgs, lib, config, ... }: {
+    imports = [ self.modules.nixos.mouse ];
 
     programs.niri = {
       enable = true;

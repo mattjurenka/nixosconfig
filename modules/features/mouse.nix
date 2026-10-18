@@ -1,5 +1,5 @@
 { ... }: {
-  flake.nixosModules.mouse = { lib, config, ... }:
+  flake.modules.nixos.mouse = { lib, config, ... }:
     let
       cfg = config.my.mouse;
     in

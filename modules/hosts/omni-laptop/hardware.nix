@@ -2,7 +2,7 @@
 # and may be overwritten by future invocations.  Please make changes
 # to /etc/nixos/configuration.nix instead.
 { self, inputs, ...}: {
-  flake.nixosModules.omniLaptopHardware = { config, lib, pkgs, modulesPath, ... }: {
+  flake.modules.nixos.omniLaptopHardware = { config, lib, pkgs, modulesPath, ... }: {
     imports = [
       (modulesPath + "/installer/scan/not-detected.nix")
     ];

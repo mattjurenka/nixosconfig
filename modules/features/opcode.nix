@@ -10,7 +10,7 @@
 # keep, the next step is building main from source, which means dealing with
 # its bun lockfile; that is why this takes the prebuilt .deb instead.
 { ... }: {
-  flake.nixosModules.opcode = { pkgs, lib, ... }:
+  flake.modules.nixos.opcode = { pkgs, lib, ... }:
     let
       opcode = pkgs.stdenv.mkDerivation (finalAttrs: {
         pname = "opcode";

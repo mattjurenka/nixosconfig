@@ -1,8 +1,8 @@
 { self, inputs, ... }: {
   flake.nixosConfigurations.claude-vm = inputs.nixpkgs.lib.nixosSystem {
     modules = [
-      self.nixosModules.claudeVmConfiguration
-      self.nixosModules.niri
+      self.modules.nixos.claudeVmConfiguration
+      self.modules.nixos.niri
     ];
   };
 }

@@ -6,7 +6,7 @@
   flake.homeConfigurations.matthew = inputs.home-manager.lib.homeManagerConfiguration {
     pkgs = import inputs.nixpkgs { system = "x86_64-linux"; };
     modules = [
-      self.homeModules.matthewModule
+      self.modules.homeManager.matthewModule
       {
         home.username = "matthew";
         home.homeDirectory = "/home/matthew";
@@ -18,7 +18,7 @@
   # home-manager.users.matthew, so it is shared across all of them rather than
   # being per-host. Anything genuinely host-specific belongs in a feature module
   # that only that host imports.
-  flake.homeModules.matthewModule = { pkgs, ... }: {
+  flake.modules.homeManager.matthewModule = { pkgs, ... }: {
     imports = [
       config.flake.modules.homeManager.noctalia
       config.flake.modules.homeManager.claudeStatus

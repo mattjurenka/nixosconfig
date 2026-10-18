@@ -7,7 +7,7 @@
   # instances of one module rather than two copies of it. Everything that
   # differs between them is an option below; everything that is the same --
   # which is most of the boundary -- is written once.
-  flake.nixosModules.agentVmHost = { pkgs, lib, config, ... }:
+  flake.modules.nixos.agentVmHost = { pkgs, lib, config, ... }:
     let
       cfg = config.my.agentVms;
       plans = self.lib.agentVm.instances;

@@ -9,7 +9,7 @@
 # flake.lock like any other input, so a new upstream version only arrives on a
 # `nix flake update`; the app does not update itself on Linux.
 { self, inputs, ... }: {
-  flake.nixosModules.claude-desktop = { pkgs, ... }: {
+  flake.modules.nixos.claude-desktop = { pkgs, ... }: {
     # Built against our nixpkgs rather than the one the flake pins, same as
     # claude-code.nix, so we don't instantiate a second nixpkgs.
     nixpkgs.overlays = [

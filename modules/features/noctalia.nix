@@ -115,7 +115,7 @@ in
   # The greeter runs before any user session, so it can't see the shell's
   # palette. It reads only the manifest that the shell's "Sync Now" button
   # writes, so generate that manifest from the same stylix colours instead.
-  config.flake.nixosModules.noctaliaGreeterAppearance = { config, pkgs, ... }: let
+  config.flake.modules.nixos.noctaliaGreeterAppearance = { config, pkgs, ... }: let
     appearance = pkgs.writeText "noctalia-greeter-appearance.json" (builtins.toJSON {
       version = 1;
       theme_mode = "dark";

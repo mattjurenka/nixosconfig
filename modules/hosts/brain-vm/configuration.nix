@@ -36,7 +36,7 @@
   # guest cannot touch, and my.agentVms.instances.brain-vm on omni-laptop for
   # what opening egress gives up -- it is written out there rather than here,
   # because that is where the choice is expressed.
-  flake.nixosModules.brainVmConfiguration = { config, pkgs, lib, modulesPath, ... }:
+  flake.modules.nixos.brainVmConfiguration = { config, pkgs, lib, modulesPath, ... }:
     let
       vm = self.lib.agentVm.instances.brain-vm;
 
@@ -1699,7 +1699,7 @@
         "L+ /home/claude/.zed_server/${lib.removeSuffix "+stable" zedRemoteServerExe} - - - - ${zedRemoteServer}/bin/${zedRemoteServerExe}"
       ];
 
-      # claude-code itself comes from self.nixosModules.claude-code, imported
+      # claude-code itself comes from self.modules.nixos.claude-code, imported
       # alongside this module in ./default.nix.
       #
       # Claude Code's credentials are per-machine, and this is a different

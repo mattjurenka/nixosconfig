@@ -3,7 +3,7 @@
   # extension. Nothing of this machine is reachable from inside it except the
   # read-only drop box at /mnt/dropbox; see modules/features/agent-vm/host.nix
   # for the half of the boundary that the guest cannot touch.
-  flake.nixosModules.claudeVmConfiguration = { pkgs, lib, config, modulesPath, ... }:
+  flake.modules.nixos.claudeVmConfiguration = { pkgs, lib, config, modulesPath, ... }:
     let
       vm = self.lib.agentVm.instances.claude-vm;
     in

@@ -2,7 +2,7 @@
 # and may be overwritten by future invocations.  Please make changes
 # to /etc/nixos/configuration.nix instead.
 { self, inputs, ...}: {
-  flake.nixosModules.vinkieDesktopHardware = { config, lib, pkgs, modulesPath, ... }:
+  flake.modules.nixos.vinkieDesktopHardware = { config, lib, pkgs, modulesPath, ... }:
   {
     imports =
       [ (modulesPath + "/hardware/network/broadcom-43xx.nix")

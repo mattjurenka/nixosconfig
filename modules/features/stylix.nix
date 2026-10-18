@@ -1,6 +1,6 @@
 { ... }:
 {
-  flake.nixosModules.stylix = { pkgs, lib, ... }: {
+  flake.modules.nixos.stylix = { pkgs, lib, ... }: {
 
     stylix = {
       enable = true;

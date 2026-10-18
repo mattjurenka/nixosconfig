@@ -1,5 +1,5 @@
 { ... }: {
-  flake.nixosModules.onepassword = { lib, config, ... }:
+  flake.modules.nixos.onepassword = { lib, config, ... }:
     let
       cfg = config.my.onepassword;
     in

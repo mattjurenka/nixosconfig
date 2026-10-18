@@ -56,7 +56,7 @@
   #
   # Each is a one-line change here and needs no change in the guest; mesa
   # picks its driver from the capsets the device advertises.
-  flake.nixosModules.brainVmGpu = { pkgs, lib, ... }:
+  flake.modules.nixos.brainVmGpu = { pkgs, lib, ... }:
     let
       # Root owns the X server, so the cookie is what lets `claude` -- and
       # therefore Valheim, xdotool and scrot -- talk to it. 0644 in a

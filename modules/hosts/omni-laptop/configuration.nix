@@ -1,15 +1,15 @@
 { self, inputs, ... }: {
-  flake.nixosModules.omniLaptopConfiguration = { pkgs, lib, config, ... }: 
+  flake.modules.nixos.omniLaptopConfiguration = { pkgs, lib, config, ... }: 
   let
     # Pull the compiled binary straight out of the flake inputs
     noctaliaGreeterPkg = inputs.noctalia-greeter.packages.${pkgs.stdenv.hostPlatform.system}.default;
   in
   {
     imports = [
-      self.nixosModules.omniLaptopHardware
+      self.modules.nixos.omniLaptopHardware
       inputs.noctalia-greeter.nixosModules.default
     ];
-    home-manager.users.matthew = self.homeModules.matthewModule;
+    home-manager.users.matthew = self.modules.homeManager.matthewModule;
 
     # Use the systemd-boot EFI boot loader.
     boot.loader = {

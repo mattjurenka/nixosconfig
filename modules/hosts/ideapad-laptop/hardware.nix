@@ -2,7 +2,7 @@
 # and may be overwritten by future invocations.  Please make changes
 # to /etc/nixos/configuration.nix instead.
 { self, inputs, ...}: {
-  flake.nixosModules.ideapadLaptopHardware = { config, lib, pkgs, modulesPath, ... }: {
+  flake.modules.nixos.ideapadLaptopHardware = { config, lib, pkgs, modulesPath, ... }: {
     imports = [
       (modulesPath + "/installer/scan/not-detected.nix")
     ];

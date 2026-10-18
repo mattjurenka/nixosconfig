@@ -49,7 +49,7 @@
   # /var/lib/second-brain -- rather than outward, and host/stage-valheim.sh
   # chmods the session owner-only, which is as much as can be done from where
   # it sits.
-  flake.nixosModules.brainVmValheim = { pkgs, ... }: {
+  flake.modules.nixos.brainVmValheim = { pkgs, ... }: {
     # The Steam *client*, not just the package. steamwebhelper and friends are
     # 32-bit, so this needs the 32-bit library set and the FHS wrapper; the
     # bare package starts and then dies looking for ld-linux.so.2. Valheim
