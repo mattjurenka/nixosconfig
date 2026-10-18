@@ -1,0 +1,32 @@
+id = "jurenka/brightness-modes"
+name = "Brightness Modes"
+version = "1.0.0"
+# 26 covers everything this needs: declarative ui.* in a bar widget and in a
+# panel, closure callbacks (level 9) and the ui.button props it sets (level
+# 21). Container tooltips would need 32, but ui.button carries its own
+# `tooltip`; the native context menu (panel.openContextMenu) would need 28 and
+# has to be raised from onRightClick, which is why the mode list is a panel.
+plugin_api = 26
+author = "matthew"
+license = "MIT"
+dependencies = []
+tags = ["brightness", "display"]
+icon = "sun"
+description = "A bar glyph showing the backlight mode, and a dropdown that picks a preset or hands the panel back to the sun-following curve."
+
+[[widget]]
+id = "buttons"
+entry = "buttons.luau"
+
+# The dropdown the widget opens. Panel size is host-owned -- declared here,
+# never measured from the content -- so the height is the arithmetic of what
+# panel.luau draws: four 34px rows, three 2px gaps and 8px of padding top and
+# bottom is 158, and the rest is an allowance for whatever chrome the host puts
+# around a panel. The column centres itself, so that allowance shows up as
+# equal space above and below rather than as a gap under the last row. Change a
+# row height there and this has to follow.
+[[panel]]
+id = "modes"
+entry = "panel.luau"
+width = 240
+height = 180

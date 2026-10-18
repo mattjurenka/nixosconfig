@@ -1,0 +1,14 @@
+# Index of the plugins this source ships. Noctalia reads it to list and
+# compat-check the source; each plugin's own plugin.toml stays authoritative.
+[[plugin]]
+id = "jurenka/claude-status"
+name = "Claude Status"
+version = "1.0.0"
+updated_at = 1760227200
+added_at = 1760227200
+author = "matthew"
+license = "MIT"
+icon = "robot"
+description = "Colours a bar glyph by whether any Claude Code session -- a Zed agent thread or a terminal session -- is waiting for input."
+plugin_api = 26
+tags = ["claude"]

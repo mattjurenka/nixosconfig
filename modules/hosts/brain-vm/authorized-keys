@@ -1,0 +1,12 @@
+# Who may log in to this guest over SSH, as sshd's authorized_keys format
+# (blank lines and `#` lines are ignored by it, so this file can explain
+# itself). Read at build time by users.users.claude in ./configuration.nix.
+#
+# A public key in a public repo is what public keys are for. The private half
+# stays in ~/.ssh on the host, and the host already owns this VM completely --
+# it runs the QEMU process and holds the disk image -- so nothing here widens
+# what the laptop can do to the guest. It only makes it convenient.
+
+# Matt, on the host. gcr-ssh-agent holds this key unlocked for the desktop
+# session, which is why `brain-vm-ssh` needs no passphrase and no `-i`.
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK8ZF2kwE2FGo2oiRHIydRlj2sky3tZ03aesTBuSLRt+ matthew@omni-laptop

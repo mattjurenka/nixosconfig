@@ -96,6 +96,14 @@ in
           enabled = true;
           default.path = ./wallpaper.webp;
         };
+        # Shared with the sun-following backlight curve in
+        # adaptive-display.nix, so the gamma ramp and the brightness ramp can
+        # never disagree about when sunset is.
+        location = {
+          auto_locate = false;
+          latitude = config.my.location.latitude;
+          longitude = config.my.location.longitude;
+        };
         shell = {
           avatar_path = ./avatar.webp;
         };

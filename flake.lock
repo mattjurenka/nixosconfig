@@ -89,6 +89,26 @@
         "type": "github"
       }
     },
+    "claude-desktop": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1790632875,
+        "narHash": "sha256-ovY0ssXI4mfcLMa/bS5azndpke3qa0QOOxJgmj7sAXw=",
+        "owner": "poeck",
+        "repo": "claude-desktop-nix-flake",
+        "rev": "55ba585546fe222bf18f391a98c1ee60f79684d2",
+        "type": "github"
+      },
+      "original": {
+        "owner": "poeck",
+        "repo": "claude-desktop-nix-flake",
+        "type": "github"
+      }
+    },
     "firefox-gnome-theme": {
       "flake": false,
       "locked": {
@@ -266,11 +286,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1781954213,
-        "narHash": "sha256-8lPjiqJ7fbTToQwSlnjpqRkcGl7vriBJp4JMjz/OEfQ=",
+        "lastModified": 1790905070,
+        "narHash": "sha256-ukT5U54WQSpq6sktl5QJOZ8S4ZF3LLmP8CAFel1XJf0=",
         "owner": "noctalia-dev",
         "repo": "noctalia",
-        "rev": "e61abbfb8892bfaf8e5b8f56f4f964e7862cc27f",
+        "rev": "6ef43e2bf2f3d5b4205ec72a72e34a2ab76ce3b4",
         "type": "github"
       },
       "original": {
@@ -327,6 +347,7 @@
     "root": {
       "inputs": {
         "claude-code": "claude-code",
+        "claude-desktop": "claude-desktop",
         "flake-parts": "flake-parts",
         "home-manager": "home-manager",
         "import-tree": "import-tree",

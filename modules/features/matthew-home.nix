@@ -21,6 +21,14 @@
   flake.homeModules.matthewModule = { pkgs, ... }: {
     imports = [
       config.flake.modules.homeManager.noctalia
+      config.flake.modules.homeManager.claudeStatus
+      # my.location, read by both halves of adaptive display: noctalia's night
+      # light for colour temperature and the sun-following backlight curve for
+      # brightness. Must come in alongside them, not instead of them.
+      config.flake.modules.homeManager.location
+      config.flake.modules.homeManager.adaptiveDisplay
+      # Zed with Claude Code in its agent panel; see modules/features/zed.nix.
+      config.flake.modules.homeManager.zed
       inputs.spicetify-nix.homeManagerModules.default
     ];
 
@@ -85,6 +93,13 @@
     programs.bash.enable = true;
     programs.bash.shellAliases.ll = "ls -l";
 
+    # Per-directory env vars (used to switch Claude Code's account/config dir
+    # per repo via CLAUDE_CONFIG_DIR in each repo's .envrc).
+    programs.direnv = {
+      enable = true;
+      nix-direnv.enable = true;
+    };
+
     programs.spicetify.enable = true;
 
     programs.fastfetch = {
@@ -102,11 +117,22 @@
       extensions = [
         { id = "bfnaelmomeimhlpmgjnjophhpkkoljpa"; } # Phantom
         { id = "fdjamakpfbbddfjaooikfcpapjohcfmg"; } # Dashlane
-        { id = "fcoeoabgfenejglbffodgkkbkcdhcgfn"; } # Claude
+        { id = "aeblfdkhhhdcdjpifhhbdiojplfjncoa"; } # 1Password
+        # Claude (fcoeoabgfenejglbffodgkkbkcdhcgfn) is deliberately absent: it
+        # runs on the claude-vm host instead, so it only ever sees that
+        # throwaway machine's browser.
       ];
     };
 
-    programs.obs-studio.enable = true;
+    programs.obs-studio = {
+      enable = true;
+      # Upstream OBS has no per-application audio capture on Linux, so its only
+      # audio sources are the whole desktop sink and the mic. This plugin adds
+      # an "Application Audio Capture (PipeWire)" source that pulls a single
+      # program's stream off its PipeWire node, which is how a recording gets
+      # game audio with no Discord or mic in it.
+      plugins = [ pkgs.obs-studio-plugins.obs-pipewire-audio-capture ];
+    };
 
     # Prism writes the absolute java path into each instance's config, so
     # selecting a raw /nix/store JDK breaks that instance as soon as a nixpkgs
@@ -132,6 +158,11 @@
       telegram-desktop
       awscli2
       jq
+      # Viewer for the second brain's vault at ~/second-brain/vault. Managed
+      # here rather than run from the AppImage that was sitting in ~/Downloads,
+      # which is exactly the drift a declarative system exists to avoid.
+      obsidian
+      vlc
       # Minecraft: the launcher fetches the game itself at runtime, and its
       # nixpkgs wrapper supplies the JDKs plus the GL/GLFW/OpenAL libraries the
       # game expects to find outside the store.

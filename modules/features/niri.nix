@@ -27,6 +27,14 @@
     }:
     let
       noctalia = inputs.noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default;
+
+      # Mod+M, see the bind below.
+      columnWidthToggle = pkgs.writeShellApplication {
+        name = "niri-column-width-toggle";
+        runtimeInputs = [ pkgs.jq pkgs.niri ];
+        bashOptions = [ "nounset" "pipefail" ];
+        text = builtins.readFile ./niri/column-width-toggle.sh;
+      };
     in
     inputs.wrapper-modules.wrappers.niri.wrap {
       inherit pkgs;
@@ -75,6 +83,23 @@
         prefer-no-csd = {};
 	      layout = {
           gaps = 8;
+
+          # Half the 1920x1200 panel is a 948px column -- about 131 columns of
+          # JetBrains Mono at 12pt, which Claude Code fills exactly, and it
+          # still leaves room for a second window beside it. Two thirds read
+          # as most of the screen in practice and crowded out whatever was
+          # next to it, so kitty and the browser open at half.
+          default-column-width = { proportion = 0.5; };
+
+          # Mod+R cycles these, so resizing either way is one key away: from
+          # the half-width default a press gives two thirds, then full width,
+          # and another wraps round to a third.
+          preset-column-widths = [
+            { proportion = 0.33333; }
+            { proportion = 0.5; }
+            { proportion = 0.66667; }
+            { proportion = 1.0; }
+          ];
         };
 
         binds = {
@@ -88,7 +113,10 @@
           "Mod+Tab".toggle-overview = {};
           
           "Mod+F".fullscreen-window = {};
-          "Mod+M".maximize-column = {};
+          # Half width <-> full width, rather than maximize-column's "full
+          # width <-> whatever it was before".
+          "Mod+M".spawn-sh = "${lib.getExe columnWidthToggle}";
+          "Mod+R".switch-preset-column-width = {};
 
           "XF86AudioRaiseVolume".spawn-sh = "${lib.getExe noctalia} msg volume-up";
           "XF86AudioLowerVolume".spawn-sh = "${lib.getExe noctalia} msg volume-down";
@@ -98,6 +126,12 @@
 
           "XF86MonBrightnessUp".spawn-sh = "${lib.getExe noctalia} msg brightness-up";
           "XF86MonBrightnessDown".spawn-sh = "${lib.getExe noctalia} msg brightness-down";
+
+          # Force the night light's warm end on, regardless of the hour. With
+          # no ambient light sensor on this machine the schedule is working
+          # from the sun's position alone, so it has no way to know about a
+          # dark room at noon -- this is the manual override for that.
+          "Mod+N".spawn-sh = "${lib.getExe noctalia} msg nightlight-force-toggle";
 
           # Media Controls
           "XF86AudioPlay".spawn-sh = "${lib.getExe noctalia} msg media toggle";

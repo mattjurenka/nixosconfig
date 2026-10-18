@@ -1,16 +1,34 @@
 [bar.default]
-center = [ "clock", "date" ]
+# Nothing in the middle: the bar reads left to right, workspaces and what is
+# running at the near end, the status cluster at the far one, and the clock in
+# amongst that cluster rather than at the start -- the far corner is where the
+# eye already goes for battery and network, so the time is there too.
+center = []
 end = [
     "audio_visualizer",
     "media",
+    "spacer_2",
     "input_volume",
     "output_volume",
+    "spacer_2",
+    # "brightness" is the four preset buttons from
+    # modules/features/adaptive-display; "nightlight" is noctalia's own, which
+    # belongs next to them because the forced state it reports lives only in
+    # the running GammaService and so cannot be read back by a plugin.
+    "brightness",
+    "nightlight",
     "spacer_2",
     "network",
     "spacer_2",
     "bluetooth",
     "battery",
     "spacer_2",
+    "clock",
+    "date",
+    "spacer_2",
+    # The house glyph sits flush against "session" with no spacer: these two
+    # are the only things out here that open a panel rather than report a
+    # reading, so they read as one pair of buttons in the corner.
     "control-center",
     "session"
 ]
@@ -19,7 +37,38 @@ margin_ends = 8
 padding = 8
 radius = 8
 scale = 1.05
-start = [ "workspaces", "active_window" ]
+start = [ "workspaces", "spacer_2", "claude", "spacer_2", "active_window" ]
+
+[calendar.account.claude_cal]
+type = "google"
+name = "Claude"
+calendars = [ "d4d3457c1699083d464ecbfc9817359e17534ad8c8056a346aed1d35db5f6633@group.calendar.google.com" ]
+
+[desktop_widgets]
+enabled = true
+schema_version = 2
+widget_order = [ "calendar-schedule@eDP-1" ]
+
+    [desktop_widgets.grid]
+    cell_size = 16
+    major_interval = 4
+    visible = true
+
+    [desktop_widgets.widget."calendar-schedule@eDP-1"]
+    box_height = 0.0
+    box_width = 0.0
+    cx = 1604.0
+    cy = 987.0
+    output = "eDP-1"
+    rotation = 0.0
+    type = "calendar"
+
+        [desktop_widgets.widget."calendar-schedule@eDP-1".settings]
+        background = true
+        background_color = "surface"
+        background_opacity = 0.8
+        show_events = true
+        show_week_numbers = false
 
 [[control_center.shortcuts]]
 type = "wifi"
@@ -39,8 +88,22 @@ type = "mic_mute"
 [[control_center.shortcuts]]
 type = "session"
 
-[location]
-address = "Shanghai, China"
+# The colour-temperature half of adaptive display. noctalia holds its own
+# wlr-gamma-control client and ramps between these two over an hour either side
+# of sunset, anchored to the wall clock rather than to when the shell started,
+# so nothing else here should touch gamma. Mod+N forces night mode on when the
+# schedule is wrong -- which it will sometimes be, because this machine has no
+# ambient light sensor for it to check itself against. See
+# modules/features/adaptive-display.nix.
+[nightlight]
+enabled = true
+force = false
+temperature_day = 6500
+temperature_night = 3500
+
+# [location] is set from my.location in noctalia.nix, as coordinates: an
+# `address` here would take precedence over them and would have to be geocoded
+# over the network before the night light had a schedule at all.
 
 [lockscreen_widgets]
 enabled = false
@@ -96,14 +159,19 @@ capsule = true
 capsule_padding = 4.0
 
 [widget.spacer_2]
-length = 32
+length = 16
 type = "spacer"
 
 [widget.workspaces]
 capsule = true
 
 [plugins]
-enabled = ["jurenka-software/devbox:devbox"]
+# jurenka/brightness-modes is deliberately absent, and so is its source below:
+# noctalia's runtime settings.toml has its own [plugins] block which shadows
+# this one entirely, so a plugin named only here is never discovered and
+# nothing reports it. modules/features/adaptive-display.nix registers and
+# enables it over IPC instead, which writes the state the shell actually reads.
+enabled = ["jurenka-software/devbox:devbox", "jurenka/claude-status"]
 
 [[plugins.source]]
 name = "devbox"
@@ -114,3 +182,21 @@ location = "~/jurenka-nixos-config/noctalia-aws"
 type = "jurenka-software/devbox:devbox"
 instance_id = "i-07f875a0b9cf40d98"
 region = "ap-southeast-1"
+
+# Paired with modules/features/claude-status, which generates the plugin into
+# that location: a bar glyph coloured by whether any Claude Code session -- a
+# Zed agent thread or a terminal session -- is waiting for input.
+[[plugins.source]]
+name = "local"
+kind = "path"
+location = "~/.config/noctalia-plugins"
+
+[widget.claude]
+type = "jurenka/claude-status:indicator"
+
+# The brightness-modes source is registered over IPC from
+# modules/features/adaptive-display.nix rather than declared here -- see the
+# note in [plugins] above. The widget placement below does work from this file,
+# which is why it stays: only the plugins block is shadowed.
+[widget.brightness]
+type = "jurenka/brightness-modes:buttons"

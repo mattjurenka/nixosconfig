@@ -1,0 +1,14 @@
+# Index of the plugins this source ships. noctalia reads it to list and
+# compat-check the source; each plugin's own plugin.toml stays authoritative.
+[[plugin]]
+id = "jurenka/brightness-modes"
+name = "Brightness Modes"
+version = "1.0.0"
+updated_at = 1760227200
+added_at = 1760227200
+author = "matthew"
+license = "MIT"
+icon = "sun"
+description = "A bar glyph showing the backlight mode, and a dropdown that picks a preset or hands the panel back to the sun-following curve."
+plugin_api = 26
+tags = ["brightness", "display"]
