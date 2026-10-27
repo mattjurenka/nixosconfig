@@ -228,39 +228,12 @@
         };
 
         # Pepper, the personal assistant (~/pepper/.agent/plans/pepper-prd.md),
-        # added 2026-10-24. Headless and allowlisted: it reads personal mail
-        # while holding personal credentials, so the proxy is what stands
-        # between a prompt injection and the internet. Each later addition to
-        # this list is written down with its reason.
+        # added 2026-10-24. Headless and allowlisted; the list is the pepper
+        # brain's egress, written down with its reasons in
+        # modules/features/fleet.nix.
         pepper-vm = {
           egress = "allowlist";
-          allowedDomains = [
-            # Claude Code, from brain-vm's allowlist (taken from Claude Code's
-            # documented network requirements; the PRD's console.anthropic.com
-            # and statsig.anthropic.com were the earlier wrong guess).
-            # api.anthropic.com carries the API and the WebFetch check;
-            # platform.claude.com OAuth token exchange and refresh; claude.ai
-            # and claude.com the sign-in; code.claude.com the docs lookups.
-            "api.anthropic.com"
-            "platform.claude.com"
-            "claude.ai"
-            "claude.com"
-            "code.claude.com"
-
-            # corkboard's Worker: tasks, plans and memory over MCP, and its
-            # OAuth endpoints.
-            "corkboard.matthewjurenka.workers.dev"
-
-            # Google, read-only, for Phase 3 (calendar.readonly,
-            # gmail.readonly). Each host is its API's rootUrl. No
-            # accounts.google.com: consent runs on the host, so the guest can
-            # spend a token but cannot start a consent of its own.
-            "oauth2.googleapis.com"
-            "www.googleapis.com"
-            "gmail.googleapis.com"
-
-            # Not yet: the Canvas ICS feed's host, until Phase 3 knows it.
-          ];
+          allowedDomains = self.lib.fleet.templates.pepper-vm.egress;
 
           headless = true;
           sshLogin = true;
