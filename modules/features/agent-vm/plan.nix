@@ -1,102 +1,15 @@
-{ ... }: {
-  # Address plan and paths for the isolated agent VMs, shared between the
-  # host-side plumbing in ./host.nix and the guests in modules/hosts/*, so the
+{ inputs, ... }: {
+  # The agent VMs this flake's hosts and guests know about. Each is a plan from
+  # corkboard's `lib.fleet.mkPlan` (~/corkboard/fleet/plan.nix): its own /24,
+  # tap device and nftables table. The host gets the set through
+  # ./host.nix, and each guest in modules/hosts/* reads its own entry, so the
   # two can never drift apart.
   #
-  # Each VM gets its own /24, its own tap device and its own nftables table, so
-  # two VMs can run at once without their rules interacting. Adding a VM means
-  # adding an entry to `instances` and a nixosConfiguration under
-  # modules/hosts/; nothing else needs to know about it.
+  # Adding a VM means adding an entry to `instances` and a nixosConfiguration
+  # under modules/hosts/; nothing else needs to know about it.
   flake.lib.agentVm =
     let
-      mkPlan =
-        {
-          # Matches the nixosConfigurations name and the guest's hostName: the
-          # launcher derives `run-<name>-vm` from it.
-          name,
-          # Kernel interface names are capped at 15 characters, so these are
-          # abbreviated rather than derived from `name`.
-          interface,
-          # Second octet of the VM's /24. Must be unique per VM.
-          octet,
-          mac,
-          # Port the host-side filtering proxy listens on, for VMs whose egress
-          # is an allowlist. Unused when egress is open.
-          proxyPort ? 8888,
-          # How many independent interactive consoles the guest offers.
-          #
-          # One is not a limitation of the socket but of two things at once, and
-          # raising this is the only way around either. QEMU's `socket` chardev
-          # serves exactly one client at a time -- there is a `mux` option but it
-          # multiplexes QEMU *frontends* onto one backend (monitor plus serial),
-          # not clients onto one socket -- so a second `UNIX-CONNECT` sits in the
-          # accept backlog until the first detaches. And even if it could connect,
-          # there is one `/dev/hvc0` with one `bash -i` on it, so both clients
-          # would share a single shell and a single terminal state, which is
-          # garbled output rather than a second session.
-          #
-          # So each console is a genuinely separate thing all the way down: its
-          # own virtio-serial port, its own unix socket on the host, and its own
-          # shell service in the guest. Ports are cheap -- one virtio-serial-pci
-          # bus carries 31 of them -- and an idle console costs a socket file and
-          # a blocked `bash`.
-          consoles ? 1,
-        }:
-        assert consoles >= 1;
-        rec {
-          inherit name interface mac proxyPort consoles;
-
-          prefixLength = 24;
-          hostAddress = "10.${toString octet}.0.1";
-          guestAddress = "10.${toString octet}.0.2";
-          subnet = "10.${toString octet}.0.0/${toString prefixLength}";
-
-          stateDir = "/var/lib/${name}";
-          shareDir = "${stateDir}/share";
-          # The way back out. `shareDir` is read-only in the guest so a file
-          # handed in cannot be altered or deleted by the agent -- which also
-          # leaves the agent no way to hand anything back. This one is
-          # writable and carries traffic in that direction only. Created for
-          # every instance, so a guest that wants it need only declare the
-          # share.
-          outboxDir = "${stateDir}/outbox";
-          diskImage = "${stateDir}/disk.qcow2";
-          spiceSocket = "${stateDir}/spice.sock";
-          runDir = "${stateDir}/run";
-
-          # A headless VM's stdio console goes to the journal, which is
-          # write-only: there is no way to type into it. These ports are the way
-          # in -- unix sockets, so QEMU-level rather than network, reachable only
-          # by whoever can open the file, and unusable by the guest to reach
-          # anything.
-          #
-          # Indices are 1-based because they are user-facing: `brain-vm-console 2`
-          # is the second console. The guest's device numbering is 0-based
-          # (hvc0..hvcN-1), so the two are deliberately converted in one place --
-          # `consoleDevice` below -- rather than at each use.
-          consoleIndices = builtins.genList (i: i + 1) consoles;
-
-          # Console 1 keeps the original unsuffixed path. Renaming it would have
-          # been tidier, but the socket is also what a running VM is already
-          # serving and what muscle memory and any stray script point at.
-          consoleSocketFor = i:
-            if i == 1 then "${stateDir}/console.sock"
-            else "${stateDir}/console-${toString i}.sock";
-          consoleSockets = map consoleSocketFor consoleIndices;
-
-          # Held by the host-side wrapper for as long as it is attached, so a
-          # second invocation can find a free console instead of silently
-          # blocking on a busy socket. A lock rather than probing the socket:
-          # connecting to a busy chardev is exactly the thing being avoided, so
-          # it cannot also be the test for it.
-          consoleLockFor = i: "${stateDir}/console-${toString i}.lock";
-
-          consoleDevice = i: "hvc${toString (i - 1)}";
-          consoleChardevId = i: "${name}console${toString i}";
-
-          # The first console, for the callers that only ever want one.
-          consoleSocket = consoleSocketFor 1;
-        };
+      mkPlan = inputs.corkboard.lib.fleet.mkPlan;
     in
     {
       inherit mkPlan;
@@ -127,6 +40,18 @@
           # because the marginal cost is a socket file and a blocked shell, and
           # discovering the limit a second time is more expensive than that.
           consoles = 3;
+        };
+
+        # Pepper, the personal assistant (~/pepper): headless, and no route
+        # off this machine but the filtering proxy. It reads personal mail
+        # and the calendar, so it is the guest the allowlist is for now. One
+        # console, because its sessions come in over SSH; the console is for
+        # the first login and for a guest that did not boot.
+        pepper-vm = mkPlan {
+          name = "pepper-vm";
+          interface = "ppvm0";
+          octet = 79;
+          mac = "52:54:00:c1:a0:04";
         };
       };
     };
