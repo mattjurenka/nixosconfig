@@ -19,8 +19,18 @@ let
       # repos it builds. Open egress since 2026-10-11 (see
       # my.agentVms.instances.brain-vm on omni-laptop for what that gave up).
       work = {
-        modules = [ self.modules.nixos.brainVmConfiguration ];
         credentials = [ "graph" "github" "google" ];
+        # Stable's Claude account, shared by every work agent.
+        account = "work";
+        # The vault, as brain-vm mounts it: every work agent spawned in a
+        # slot reads and writes the same one. It is in ~/second-brain's git,
+        # so two agents' edits meet as commits.
+        shares.vault = {
+          source = "/home/matthew/second-brain/vault";
+          target = "/mnt/vault";
+          writable = true;
+          description = "the work brain's vault (Obsidian, Markdown)";
+        };
       };
 
       # Pepper, the personal assistant (~/pepper/.agent/plans/pepper-prd.md),
@@ -29,7 +39,10 @@ let
       # injection and the internet. Each later addition to this list is
       # written down with its reason.
       pepper = {
-        modules = [ self.modules.nixos.pepperVmConfiguration ];
+        # The personal Claude account. Pepper's memory is corkboard's notes,
+        # over MCP, so it has no shares; a spawned agent reaches it once
+        # spawn tokens exist (the fleet plan's step 4).
+        account = "personal";
         credentials = [ "google" "corkboard" ];
         egress = [
           # corkboard's Worker: tasks, plans and memory over MCP, and its
@@ -50,6 +63,8 @@ let
     };
 
     inherit slots;
+    # matthew, who runs the slots: virtiofs passes uids through.
+    ownerUid = 1002;
     slotModules = [{
       # Who may log in to a slot over SSH: `agent-N-ssh` on this host.
       users.users.claude.openssh.authorizedKeys.keyFiles = [ ../hosts/pepper-vm/authorized-keys ];
@@ -124,12 +139,14 @@ let
       # The work brain, and Valheim and the wallet browser alongside it, as
       # one guest until Valheim becomes a template of its own.
       brain-vm = {
+        modules = [ self.modules.nixos.brainVmConfiguration ];
         brain = "work";
         capabilities = [ "claude-code" "valheim" "gpu" "wallet-browser" ];
         environments = [ "local" ];
       };
 
       pepper-vm = {
+        modules = [ self.modules.nixos.pepperVmConfiguration ];
         brain = "pepper";
         capabilities = [ "claude-code" ];
         environments = [ "local" ];
@@ -139,6 +156,23 @@ let
       # slot: `corkboard-fleet spawn coding --repo DIR <task>`. Its work
       # comes back as commits (`corkboard-fleet fetch`).
       coding = {
+        capabilities = [ "claude-code" "coding" ];
+        environments = [ "local" ];
+        spawnable = true;
+      };
+
+      # The same, working for a brain: its account, and its memory mounted
+      # (the vault, for work). Spawned by the user, they run; spawned by a
+      # brain, they hold its credentials, so they wait for a yes.
+      work-coding = {
+        brain = "work";
+        capabilities = [ "claude-code" "coding" ];
+        environments = [ "local" ];
+        spawnable = true;
+      };
+
+      pepper-coding = {
+        brain = "pepper";
         capabilities = [ "claude-code" "coding" ];
         environments = [ "local" ];
         spawnable = true;
@@ -155,6 +189,6 @@ let
   };
 in
 {
-  flake.lib.fleet = { inherit (fleet) templates environments slotEgress; };
+  flake.lib.fleet = { inherit (fleet) templates environments brains slotEgress; };
   flake.nixosConfigurations = fleet.nixosConfigurations;
 }

@@ -265,6 +265,12 @@
       # What a slot can be started as, and how big each is.
       templates = self.lib.fleet.templates;
 
+      # Who each brain's agents run as, and a plain `coding` spawn of
+      # yours unless you say --account. Tokens are in
+      # ~/.local/state/corkboard/fleet/accounts/{personal,work}.
+      brains = self.lib.fleet.brains;
+      defaultAccount = "personal";
+
       # What the agents may have between them, counted the way fleetd does:
       # brain-vm's and pepper-vm's ceilings while they are up (16 GiB), and
       # each spawn's template plus 512 MiB. 21 GiB lets one coding agent
