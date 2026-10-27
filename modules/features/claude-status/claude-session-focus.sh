@@ -3,9 +3,9 @@
 # has none, which is the normal state of a background agent -- open a terminal
 # attached to it.
 #
-# A Zed agent thread is the other shape a session comes in, and it is handled
-# on its own below: it belongs to the editor rather than to a terminal, so
-# there is no tab to find and nothing to attach to.
+# A Claude session in corkboard is the other shape a session comes in, and it
+# is handled on its own below: it is a terminal inside corkboard's Neovim, so
+# there is no kitty tab to find and nothing to attach to.
 #
 # For everything else, finding the window means walking up from the session's
 # own process until a pid turns up that niri knows as a window, since the
@@ -32,7 +32,10 @@ mapfile -t fields < <(
     (.configDir // ""),
     ((.name // "claude") | gsub("[\\n\\r\\t]"; " ")),
     (.origin // "local"),
-    (.agent // "cli")
+    (.agent // "cli"),
+    (.corkboard.nvim // ""),
+    (.corkboard.buf // "" | tostring),
+    (.corkboard.port // "")
   ' <<<"$session"
 )
 
@@ -44,112 +47,58 @@ configDir="${fields[4]:-}"
 name="${fields[5]:-claude}"
 origin="${fields[6]:-local}"
 
-# "zed" for a thread in the editor's agent panel, "cli" for a session in a
-# terminal. A reading published by a machine running an older watcher carries
-# no agent at all, and "cli" is the right thing to assume there: it is what
-# every session was before the editor grew a panel.
+# "corkboard" for a Claude session in corkboard, "cli" for one in a terminal.
+# A reading published by a machine running an older watcher carries no agent
+# at all, and "cli" is the right thing to assume there.
 agent="${fields[7]:-cli}"
+cbNvim="${fields[8]:-}"
+cbBuf="${fields[9]:-}"
+cbPort="${fields[10]:-}"
 
-# A Zed agent thread runs under the editor, not under a terminal: Zed starts
-# claude-agent-acp, the acp process execs claude, and nothing in that chain has
-# a tab. So the window to focus is Zed's own, found by app id -- and it is
-# *this* machine's Zed even for a thread in an agent VM, because the editor
-# drives a remote project over SSH while the process the reading came from
-# lives in the guest.
+# A Claude session in corkboard is a terminal in corkboard's Neovim, shown in
+# corkboard's own window, so there is no kitty tab to find. What there is
+# instead is that Neovim's own server socket, read out of the session's
+# environment by claude-ready-watch along with the terminal's buffer: asked
+# over it, Neovim brings the session's terminal to the front (a tab of its
+# own, or a window in one) and says which project it has open, and the app
+# window titled after that project is the one to raise. The page titles
+# itself "<project> — corkboard", or "<project> @ <host> — corkboard" for a
+# project on another machine.
 #
-# Zed titles a window after the project it has open, which is the one thing
-# that tells two of its windows apart, and the thread's cwd is a path inside
-# that project -- so the last component of the cwd is what to look for.
+# Which app it is comes from the bridge's port: the installed corkboard and
+# the dev one are separate apps, each with its own app_id (corkboard.nix),
+# and the same project can be open in both.
 #
-# What is deliberately *not* here is a fall-through to whichever Zed window
-# happens to exist. A thread can be open in the editor with no window of its
-# own: Zed keeps a project loaded after its window closes, which is the normal
-# state of a thread in an agent VM, and focusing the window of some other
-# project only looks like it worked. So an unmatched project is asked for by
-# name below instead.
-if [ "$agent" = "zed" ]; then
-  project=""
-  if [ -n "$cwd" ]; then
-    project=$(basename "$cwd")
-  fi
+# A session in an agent VM has its Neovim in the guest, out of reach of the
+# socket, so for one of those the window is all there is to raise.
+if [ "$agent" = "corkboard" ]; then
+  appId=$(jq -r --arg port "$cbPort" '.[$port] // empty' <<<'@corkboardApps@') || appId=""
 
-  zed_window() {
-    niri msg --json windows 2>/dev/null | jq -r --arg project "$project" '
-      [ .[] | select(.app_id == "dev.zed.Zed") ] as $zed
-      | [ $zed[] | select((.title // "") == $project) ]
-        + [ $zed[] | select($project != "" and ((.title // "") | contains($project))) ]
-        | first | .id // empty
-    '
-  }
-
-  zedWindow=$(zed_window) || zedWindow=""
-  if [ -n "$zedWindow" ]; then
-    niri msg action focus-window --id "$zedWindow"
-    exit 0
-  fi
-
-  # Nothing is showing that project, so ask the editor for it. `zeditor` takes
-  # an `ssh://user@host/path` URL as well as a local path -- undocumented in
-  # its own `--help`, but it is how Zed names a remote project, and it reuses
-  # the connection a thread in that guest is already running over rather than
-  # starting a second one. That is the difference between landing in the
-  # thread and sitting on "Starting proxy".
-  #
-  # -n because the project has no window: without it Zed opens the project in
-  # whichever window is current, which means a click on a thread in the guest
-  # replaces the window Matt had his own checkout open in.
-  target=""
-  if [ "$origin" = "local" ]; then
-    [ -n "$cwd" ] && [ -d "$cwd" ] && target="$cwd"
-  else
-    # The guest logins, from the same address plan zed.nix builds its
-    # ssh_connections from, so a thread cannot be pointed at an address the
-    # editor does not use. An origin that is not in the map -- a machine this
-    # host does not run -- leaves this empty and falls through.
-    target=$(jq -r --arg origin "$origin" --arg cwd "$cwd" '
-      (.[$origin] // "") as $base
-      | if $base == "" or $cwd == "" then empty else $base + $cwd end
-    ' <<<'@vmProjects@') || target=""
-  fi
-
-  if [ -n "$target" ]; then
-    # One opener per project at a time. Opening a window is slow enough to
-    # double-click through -- and every window Zed opens starts a thread of
-    # its own, so a burst of clicks on the same square cost a burst of windows
-    # and a 240 MB claude process behind each new empty tab. The lock makes the
-    # second click wait for the first and then find the window below instead.
-    exec 9>"${XDG_RUNTIME_DIR:-/tmp}/claude-zed-open.$(printf '%s' "$project" | tr -c '[:alnum:]' _).lock"
-    flock 9
-
-    zedWindow=$(zed_window) || zedWindow=""
-    if [ -n "$zedWindow" ]; then
-      niri msg action focus-window --id "$zedWindow"
-      exit 0
+  suffix=""
+  if [ "$origin" = "local" ] && [ -S "$cbNvim" ]; then
+    # Bounded, so a Neovim that has stopped answering cannot hang the click.
+    project=$(timeout 2 nvim --server "$cbNvim" --remote-expr 'fnamemodify(getcwd(-1, -1), ":t")' 2>/dev/null) || project=""
+    if [ -n "$cbBuf" ]; then
+      timeout 2 nvim --server "$cbNvim" \
+        --remote-expr "luaeval('require(\"corkboard.picker\").focus_terminal(_A)', $cbBuf)" >/dev/null 2>&1 || true
     fi
-
-    claude-zed-open -n "$target" || true
-
-    # Zed opens the window but cannot raise it: gpui logs "activate is not
-    # implemented on Linux, ignoring the call" and the window arrives behind
-    # whatever was in front, which on 2026-10-17 was a game. So the focus is
-    # done here, once the window exists -- waited for rather than slept on,
-    # since a project on a connection that is already up appears in about a
-    # second and a cold one takes longer.
-    for _ in $(seq 20); do
-      sleep 0.5
-      zedWindow=$(zed_window) || zedWindow=""
-      if [ -n "$zedWindow" ]; then
-        niri msg action focus-window --id "$zedWindow"
-        exit 0
-      fi
-    done
-
-    exit 0
+    [ -n "$project" ] && suffix="$project — corkboard"
+  elif [ "$origin" != "local" ]; then
+    suffix=" @ $origin — corkboard"
   fi
 
-  # No project to name: get the editor up on whatever it had open last, which
-  # at least puts the threads sidebar in front of him.
-  exec claude-zed-open
+  window=$(niri msg --json windows 2>/dev/null | jq -r --arg app "$appId" --arg suffix "$suffix" '
+    [ .[] | select((.app_id // "") | test("^corkboard(-|$)")) ] as $corkboard
+    | [ $corkboard[] | select($app == "" or .app_id == $app) ] as $mine
+    | [ $mine[] | select($suffix != "" and ((.title // "") | contains($suffix))) ]
+      + [ $corkboard[] | select($suffix != "" and ((.title // "") | contains($suffix))) ]
+      | first | .id // empty
+  ') || window=""
+
+  if [ -n "$window" ]; then
+    niri msg action focus-window --id "$window"
+  fi
+  exit 0
 fi
 
 # A pid and every pid above it, stopping before init.

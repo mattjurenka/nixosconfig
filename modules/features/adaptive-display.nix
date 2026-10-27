@@ -27,6 +27,15 @@
 #   brightness     -> the service below, because noctalia's [brightness]
 #                     section configures the backend it reaches the panel
 #                     through and has no schedule of its own.
+#   darker still   -> a black layer-shell sheet, because the backlight has a
+#                     hardware floor well above off: asked for 0 through
+#                     logind this panel still reports an actual_brightness of
+#                     3084 out of 65535, the same place it sits at the 5%
+#                     minimum. Gamma would have been the better instrument and
+#                     is not available -- noctalia takes wlr-gamma-control on
+#                     eDP-1 at startup and holds it for the session whether or
+#                     not night light is on, so a second client gets
+#                     gamma_control::Event::Failed. See screen-dim.qml.
 { ... }: {
   flake.modules.homeManager.adaptiveDisplay = { pkgs, lib, config, ... }:
     let
@@ -64,6 +73,9 @@
             "@dayBrightness@"
             "@nightBrightness@"
             "@minBrightness@"
+            "@nightDim@"
+            "@dimElevation@"
+            "@maxDim@"
             "@dayElevation@"
             "@nightElevation@"
             "@intervalSeconds@"
@@ -74,11 +86,56 @@
             (toString cfg.dayBrightness)
             (toString cfg.nightBrightness)
             (toString cfg.minBrightness)
+            (toString cfg.nightDim)
+            (toString cfg.dimElevation)
+            (toString cfg.maxDim)
             (toString cfg.dayElevation)
             (toString cfg.nightElevation)
             (toString cfg.intervalSeconds)
           ]
           (builtins.readFile ./adaptive-display/sun-brightness.sh);
+      };
+
+      # What the Fn brightness keys are bound to in niri.nix, in place of
+      # noctalia's own brightness-up/down. On PATH like the other two, because
+      # a key that does something should be a thing you can also just run.
+      screenBrightness = pkgs.writeShellApplication {
+        name = "screen-brightness";
+        runtimeInputs = [ pkgs.gawk pkgs.coreutils pkgs.systemd noctaliaPackage ];
+        # No errexit, same as sun-brightness: a SetBrightness refused on an
+        # inactive session should still leave the OSD and the sheet consistent
+        # rather than abandoning the keypress half done.
+        bashOptions = [ "nounset" "pipefail" ];
+        text = builtins.replaceStrings
+          [
+            "@minBrightness@"
+            "@maxDim@"
+            "@coarseStep@"
+            "@fineStep@"
+            "@noctalia@"
+          ]
+          [
+            (toString cfg.minBrightness)
+            (toString cfg.maxDim)
+            (toString cfg.coarseStep)
+            (toString cfg.fineStep)
+            (lib.getExe noctaliaPackage)
+          ]
+          (builtins.readFile ./adaptive-display/screen-brightness.sh);
+      };
+
+      # What Mod+S is bound to in niri.nix, in place of noctalia's own
+      # screenshot-region: the same screenshot, with the screen-dim sheet out
+      # of the frame. Names the sheet's config by the same store path the
+      # service runs, which is how quickshell picks out that instance.
+      screenshotRegion = pkgs.writeShellApplication {
+        name = "screenshot-region";
+        runtimeInputs = [ pkgs.quickshell pkgs.niri pkgs.jq pkgs.coreutils noctaliaPackage ];
+        bashOptions = [ "nounset" "pipefail" ];
+        text = builtins.replaceStrings
+          [ "@screenDimQml@" ]
+          [ "${./adaptive-display/screen-dim.qml}" ]
+          (builtins.readFile ./adaptive-display/screenshot-region.sh);
       };
 
       # noctalia installs plugins out of a source directory holding a catalog
@@ -198,11 +255,14 @@
 
             Note that at the default this is equal to
             <option>minBrightness</option>, which is both the "minimum" preset
-            and the floor under everything the service writes. Two consequences:
-            the minimum button has nothing left to do once the curve has
-            bottomed out, and a manual nudge below 5% at night gets pulled back
-            up to 5% on the next tick. Lower
-            <option>minBrightness</option> if you want headroom under the curve.
+            and the floor under everything the service writes. Two
+            consequences: a manual nudge below 5% at night gets pulled back up
+            to 5% on the next tick, and the minimum button has nothing left to
+            ask of the backlight once the curve has bottomed out -- it is the
+            overlay that gives that button something to do after dark, by
+            taking it straight to <option>nightDim</option>. Lower
+            <option>minBrightness</option> if you want headroom under the
+            curve.
           '';
         };
 
@@ -215,6 +275,89 @@
 
             Deliberately above zero: a 0 here is a black screen whose only way
             back is the thing that just set it.
+          '';
+        };
+
+        nightDim = lib.mkOption {
+          type = lib.types.float;
+          default = 0.5;
+          description = ''
+            How black a sheet the overlay lays over the screen once the night
+            is fully on, where 0 is none and 1 would be opaque.
+
+            This exists because <option>minBrightness</option> is not actually
+            the bottom of anything: the panel clamps in hardware at roughly
+            4.7% of its raw range, so asking logind for 0 and asking it for the
+            5% floor land on the same brightness. Everything darker than that
+            has to be composited rather than dimmed, which is what
+            adaptive-display/screen-dim.qml does and why it does it with a
+            layer surface instead of a gamma ramp.
+
+            Clamped to 0.9 at the overlay, on the same reasoning as
+            <option>minBrightness</option> being above zero.
+          '';
+        };
+
+        dimElevation = lib.mkOption {
+          type = lib.types.float;
+          default = -12.0;
+          description = ''
+            Solar elevation at which <option>nightDim</option> is reached.
+
+            Deliberately below <option>nightElevation</option> rather than
+            alongside it: the backlight ramp finishes at civil twilight, and
+            this one runs from there down to nautical twilight, so dusk carries
+            on getting darker for another half hour or so instead of stopping
+            dead the moment the panel bottoms out. Setting the two equal makes
+            the overlay a step rather than a ramp; setting this above
+            <option>nightElevation</option> makes the two overlap, which dims
+            twice over the same stretch.
+          '';
+        };
+
+        maxDim = lib.mkOption {
+          type = lib.types.float;
+          default = 0.8;
+          description = ''
+            The blackest sheet anything here will ask for, and so the bottom
+            of the range the Fn keys travel.
+
+            At the defaults this puts the floor of the whole axis at
+            <literal>minBrightness * (1 - maxDim)</literal>, or 1% of the
+            panel's light: five presses below where the backlight gives up.
+
+            Distinct from the overlay's own clamp of 0.9, which is a last
+            resort against a black screen rather than a setting -- leave room
+            between the two, and a bug in the arithmetic here still cannot
+            put out the display.
+          '';
+        };
+
+        coarseStep = lib.mkOption {
+          type = lib.types.float;
+          default = 0.05;
+          description = ''
+            How far one press of an Fn brightness key moves the axis while the
+            backlight still has room.
+
+            Matched to noctalia's own default step, so that above the floor
+            the keys behave exactly as they did before screen-brightness was
+            put in front of them.
+          '';
+        };
+
+        fineStep = lib.mkOption {
+          type = lib.types.float;
+          default = 0.01;
+          description = ''
+            How far one press moves the axis below the backlight's floor.
+
+            Finer than <option>coarseStep</option> because the entire range
+            down there is only <option>minBrightness</option> wide -- a coarse
+            step would make the overlay a single on/off, and the point of it
+            is that the dark end of the evening has more than one setting in
+            it. Each press is one percentage point of the light actually
+            leaving the screen.
           '';
         };
 
@@ -262,7 +405,7 @@
         # it prints the sun's elevation and the curve's verdict on every tick,
         # which is the whole story when the screen is at a brightness that
         # seems wrong.
-        home.packages = [ sunBrightness displayMode ];
+        home.packages = [ sunBrightness displayMode screenBrightness screenshotRegion ];
 
         # Where reloadPlugin points noctalia with `plugins source add`.
         xdg.configFile.${pluginDirName}.source = pluginSource;
@@ -285,6 +428,39 @@
             # to retry every few seconds forever.
             Restart = "on-failure";
             RestartSec = 10;
+          };
+
+          Install.WantedBy = [ "graphical-session.target" ];
+        };
+
+        # The other half of the dimming, below where the backlight runs out.
+        systemd.user.services.screen-dim = {
+          Unit = {
+            Description = "A black sheet over the screen, below the backlight's floor";
+            PartOf = [ "graphical-session.target" ];
+            After = [ "graphical-session.target" ];
+          };
+
+          Service = {
+            # The state file has to exist before the overlay starts watching
+            # it. inotify has nothing to attach to on a path that is not there
+            # yet, so an overlay that came up first would never hear about the
+            # file sun-brightness creates a moment later and would sit at zero
+            # for the session. touch rather than a write of 0: if the service
+            # is being restarted into a session that is already dark, the
+            # value in there is the right one to keep.
+            ExecStartPre = pkgs.writeShellScript "screen-dim-state" ''
+              dir="''${XDG_RUNTIME_DIR:-/tmp}/adaptive-display"
+              mkdir -p "$dir"
+              touch "$dir/dim"
+            '';
+            ExecStart = "${pkgs.quickshell}/bin/quickshell -p ${./adaptive-display/screen-dim.qml}";
+            # always, unlike sun-brightness: there is no such thing as a host
+            # this has nothing to do on, so every exit here is a failure of
+            # some kind -- and the failure mode is a screen stuck at whatever
+            # the last sheet was, which is worth retrying out of.
+            Restart = "always";
+            RestartSec = 5;
           };
 
           Install.WantedBy = [ "graphical-session.target" ];

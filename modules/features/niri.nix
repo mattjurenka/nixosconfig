@@ -105,11 +105,40 @@
         binds = {
           "Mod+Return".spawn-sh = "kitty";
           "Mod+B".spawn-sh = "chromium";
-          "Mod+C".spawn-sh = "vscode";
+          # vscode moved off Mod+C to make room for voice below. Still bound
+          # because it is still installed and configured (programs.vscode in
+          # matthew-home.nix), just no longer a first-row key now that the
+          # editing happens in Zed.
+          "Mod+Shift+C".spawn-sh = "vscode";
+
+          # Talk to Claude: press, speak, press again. C for Claude, which is
+          # worth the better key -- vscode moved to Mod+Shift+C above.
+          # `voice-ptt reset` starts a fresh conversation. See
+          # modules/features/voice.nix for why it is a toggle rather than one
+          # press (this laptop's microphone cannot be voice-detected by
+          # amplitude).
+          #
+          # Resolved from PATH like kitty and chromium above rather than by
+          # store path, because the command is installed through home-manager
+          # (home.packages) and this file is the NixOS side -- naming a path
+          # here would couple the compositor to one user's profile.
+          "Mod+C".spawn-sh = "voice-ptt";
+
+          # corkboard (modules/features/corkboard.nix), from PATH for the same
+          # reason as voice-ptt. Shift opens it on the second brain VM, as the
+          # "corkboard (brain-vm)" launcher entry does.
+          "Mod+I".spawn-sh = "corkboard";
+          "Mod+Shift+I".spawn-sh = "corkboard --host brain-vm";
+          # The day plan, in its own window (corkboard.nix); again brings it
+          # forward.
+          "Mod+P".spawn-sh = "day-plan";
 
           "Mod+Q".close-window = {};
           "Mod+Space".spawn-sh = "${lib.getExe noctalia} msg panel-toggle launcher";
-          "Mod+S".spawn-sh = "${lib.getExe noctalia} msg screenshot-region";
+          # noctalia's region screenshot, with the screen-dim sheet out of the
+          # frame (modules/features/adaptive-display.nix); from PATH like
+          # voice-ptt.
+          "Mod+S".spawn-sh = "screenshot-region";
           "Mod+Tab".toggle-overview = {};
           
           "Mod+F".fullscreen-window = {};
@@ -124,8 +153,21 @@
           
           "XF86AudioMicMute".spawn-sh = "${lib.getExe noctalia} msg mic-mute";
 
-          "XF86MonBrightnessUp".spawn-sh = "${lib.getExe noctalia} msg brightness-up";
-          "XF86MonBrightnessDown".spawn-sh = "${lib.getExe noctalia} msg brightness-down";
+          # screen-brightness rather than noctalia directly, and named rather
+          # than given by store path like everything else here: it is built
+          # from my.adaptiveDisplay options that mkNiri cannot see, and
+          # threading them through would mean a second copy of the floor and
+          # the step sizes to keep in step with the first. home.packages puts
+          # it on /etc/profiles/per-user/matthew/bin, which is on the PATH
+          # niri spawns with.
+          #
+          # What it adds is the stretch below the backlight's floor, where
+          # this panel stops responding to logind at all and the overlay
+          # takes over -- see modules/features/adaptive-display.nix. Above the
+          # floor it hands back to noctalia's own step, so nothing about the
+          # keys changes until the point where they used to stop working.
+          "XF86MonBrightnessUp".spawn-sh = "screen-brightness up";
+          "XF86MonBrightnessDown".spawn-sh = "screen-brightness down";
 
           # Force the night light's warm end on, regardless of the hour. With
           # no ambient light sensor on this machine the schedule is working

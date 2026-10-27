@@ -1,9 +1,9 @@
 # Streams the state of the Claude Code work worth a square: one JSON line,
-# re-emitted whenever it changes. A square is a project with threads in it --
-# see the grouping at the end of local_sessions for why it is not a thread.
+# re-emitted whenever it changes. A square is one session.
 #
-# Which ones those are is the Zed-first rule in local_sessions -- a thread in
-# the editor agent panel that has been talked to -- and CLAUDE_READY_AGENTS is
+# Which ones those are is the corkboard-first rule in local_sessions -- a
+# Claude terminal in corkboard (~/corkboard) that has been talked to -- and
+# CLAUDE_READY_AGENTS is
 # the knob back to every session the registry holds. The reading below is
 # otherwise of everything, so the filter is the only place to look when a
 # session that exists is not drawn.
@@ -43,14 +43,15 @@ destination="${CLAUDE_READY_OUT:-}"
 
 # Whose sessions this reading is of.
 #
-# "zed" is the default because the work moved into the editor's agent panel:
-# the row of squares should read like Zed's own list of threads, and a session
-# someone started in a terminal -- including the console session the agent VM
-# runs its own admin work in -- is not a thread in that list. "all" is the knob
-# back to every session on the machine, which is what this reported before.
+# "corkboard" is the default because the work moved into corkboard, the
+# installed one and the dev one alike: the row of squares should read like its
+# Claude tabs and the agents on its cards, and a session someone started in a
+# plain terminal -- including the console session the agent VM runs its own
+# admin work in -- is not one of those. "all" is the knob back to every
+# session on the machine.
 #
-# A thread also has to have been talked to; see conversations() below.
-agentFilter="${CLAUDE_READY_AGENTS:-zed}"
+# A session also has to have been talked to; see conversations() below.
+agentFilter="${CLAUDE_READY_AGENTS:-corkboard}"
 
 # Readings published by other machines. A glob, not a list, so a new agent VM
 # is picked up by existing it rather than by configuring it here.
@@ -91,9 +92,7 @@ agents() {
     # bridgeSessionId is the `session_...` that claude.ai/code/<id> resolves
     # to, which is what lets a square on the phone open the session it stands
     # for. entrypoint is how the session was started: "cli" for one someone
-    # typed `claude` to get, "sdk-ts" for one the TypeScript Agent SDK drives
-    # -- which is what a Zed agent thread is, and what acp_driven below asks
-    # about.
+    # typed `claude` to get, "sdk-ts" for one the TypeScript Agent SDK drives.
     registry=$(jq -cs '
       map(select(.pid) | {
         key: (.pid | tostring),
@@ -115,48 +114,34 @@ agents() {
   printf '%s\n' "$all"
 }
 
-# Whether a session is a Zed agent thread rather than one someone started in a
-# terminal. That is the difference between a click that belongs in the editor
-# and one that belongs in a kitty tab, so the reading has to carry it.
+# Which sessions are Claude terminals in corkboard, and how to get back to
+# each one. corkboard starts every Claude it runs -- a tab from its picker, the
+# agent on a card -- in a Neovim terminal with CORKBOARD_BUF set to that
+# terminal's buffer, and Neovim sets NVIM to its own server socket, so the
+# session's environment says both which Neovim it is in and which buffer. The
+# bridge's CORKBOARD_PORT comes down the same way and tells the installed
+# corkboard from the dev one, whose windows are different apps.
 #
-# `entrypoint` says the Agent SDK is driving the session but not what is
-# driving the SDK, and it cannot be the whole answer on its own: the agent VM's
-# heartbeat is an SDK session too. What makes it Zed is the process above it --
-# the editor starts claude-agent-acp itself (see zed.nix) and the acp process
-# execs claude, so it sits directly over the session. Walked rather than read
-# one level up, since nothing promises that stays true.
+# A question about processes, so it is answered here and not in
+# claude-session-focus: a session in an agent VM (a corkboard window opened
+# with --host) lives in the guest, and the guest's own copy of this watcher is
+# the only thing that can read its environment. There it carries no port, the
+# bridge being on this side of the ssh.
 #
-# This is a question about processes, which is why it is answered here and not
-# in claude-session-focus: a thread in an agent VM is driven by Zed on the host
-# while its process lives in the guest, and the guest's own copy of this
-# watcher is the only thing that can see the acp process above it.
-acp_driven() {
-  local pid=$1 depth=0 cmdline stat
-  while [ -n "$pid" ] && [ "$pid" != "0" ] && [ "$pid" != "1" ] && [ "$depth" -lt 6 ]; do
-    cmdline=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null) || return 1
-    case "$cmdline" in
-      *claude-agent-acp*) return 0 ;;
-    esac
-
-    stat=$(cat "/proc/$pid/stat" 2>/dev/null) || return 1
-    # The comm field can hold spaces and brackets, so count fields from after
-    # the closing bracket: state, then ppid.
-    pid=$(printf '%s' "$stat" | sed 's/^.*) //' | cut -d' ' -f2)
-    depth=$((depth + 1))
-  done
-
-  return 1
-}
-
-# Those sessions as one pid -> "zed" object, which is what the jq in
-# local_sessions joins a session against. Only the SDK-driven ones are probed,
-# so an ordinary terminal session costs nothing here.
+# As one pid -> { agent, nvim, buf, port } object, which is what the jq in
+# local_sessions joins a session against.
 session_agents() {
-  local pid
+  local pid env buf
   while read -r pid; do
     [ -n "$pid" ] || continue
-    acp_driven "$pid" && jq -cn --arg k "$pid" '{ ($k): "zed" }'
-  done < <(jq -r '.[] | select(.entrypoint == "sdk-ts") | (.pid // "") | tostring' <<<"$1") \
+    env=$(tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null) || continue
+    buf=$(sed -n 's/^CORKBOARD_BUF=//p' <<<"$env")
+    [ -n "$buf" ] || continue
+    jq -cn --arg k "$pid" --arg buf "$buf" \
+      --arg nvim "$(sed -n 's/^NVIM=//p' <<<"$env")" \
+      --arg port "$(sed -n 's/^CORKBOARD_PORT=//p' <<<"$env")" \
+      '{ ($k): { agent: "corkboard", buf: ($buf | tonumber? // null), nvim: $nvim, port: $port } }'
+  done < <(jq -r '.[] | (.pid // "") | tostring' <<<"$1") \
     | jq -cs 'add // {}'
 }
 
@@ -191,12 +176,12 @@ session_topic() {
 
 # Which sessions have anything to go back to, as one sessionId -> true object.
 #
-# Zed starts an agent session the moment a thread tab is opened, before a word
-# has been said in it, and that session registers exactly like any other: idle,
-# untitled, and standing for a blank tab. The transcript is what tells the two
-# apart -- Claude Code writes the file on the first message rather than at
-# startup -- so a Zed thread with no transcript is a tab, not a conversation,
-# and the row is better off without a square for it.
+# A Claude tab opened in corkboard registers before a word has been said in
+# it, exactly like any other session: idle, untitled, and standing for a blank
+# tab. The transcript is what tells the two apart -- Claude Code writes the
+# file on the first message rather than at startup -- so a session with no
+# transcript is a tab, not a conversation, and the row is better off without a
+# square for it.
 #
 # The same glob as session_topic, for the same reason: the session id is a
 # uuid, so it can only match the one file, whatever the directory it ended up
@@ -251,13 +236,13 @@ local_sessions() {
     --argjson agents "$agentKinds" --argjson said "$said" '
     def st: (.status // "busy");
 
-    # Zed-first: a square stands for a thread in the editor that has been
-    # talked to. Everything else -- a session in a terminal, a thread tab with
-    # nothing said in it yet -- is real but is not what the row is for. A
-    # reading published by a machine running an older watcher carries neither
-    # field, and falls out here until that machine is rebuilt.
+    # corkboard-first: a square stands for a Claude session in corkboard that
+    # has been talked to. Everything else -- a session in a plain terminal, a
+    # tab with nothing said in it yet -- is real but is not what the row is
+    # for. A reading published by a machine running an older watcher says
+    # "zed" or nothing, and falls out here until that machine is rebuilt.
     def keep:
-      $filter == "all" or (.agent == "zed" and (.conversation == true));
+      $filter == "all" or (.agent == "corkboard" and (.conversation == true));
 
     # What gets written across a square. Two characters is what a square has
     # room for, and they are there to tell two squares apart rather than to be
@@ -269,14 +254,6 @@ local_sessions() {
     # derived from its cwd. That suffix is the one part of a derived name that
     # differs between two sessions in the same checkout, which is exactly the
     # pair a label is there to separate.
-    # Two characters of a project name, which is what a square stands for: the
-    # first two letters, since a project name is a word. The chip below takes
-    # the *last* dash-separated segment instead, because a derived session name
-    # ("nixosconfig-7b") carries its distinguishing part at the end -- which is
-    # the wrong end of "second-brain".
-    def projectChip($name):
-      (($name // "") | ascii_upcase | gsub("[^A-Z0-9]"; ""))[0:2];
-
     def chip($topic; $name):
       (($topic // "") | ascii_upcase | gsub("[^A-Z0-9]"; "")) as $t
       | if ($t | length) > 0 then
@@ -288,12 +265,16 @@ local_sessions() {
     [ .[]
       | (.sessionId // "") as $sid
       | (.name // (.cwd | split("/") | last)) as $name
+      | $agents[(.pid | tostring)] as $cb
       | {
         name: $name,
         topic: $topics[$sid],
         label: chip($topics[$sid]; $name),
         status: st,
-        agent: ($agents[(.pid | tostring)] // "cli"),
+        agent: ($cb.agent // "cli"),
+        # Where a click finds the session: its Neovim, its terminal buffer
+        # there, and which bridge (see session_agents).
+        corkboard: (if $cb then { nvim: $cb.nvim, buf: $cb.buf, port: $cb.port } else null end),
         conversation: ($said[$sid] // false),
         startedAt: .startedAt,
         kind: .kind,
@@ -308,16 +289,14 @@ local_sessions() {
 
     # One square per thread, not per process.
     #
-    # A thread can be running in more than one process at once: opening its
-    # project in another window has Zed start a second agent session for the
-    # thread it restores there, and the first one goes on running with no
-    # window in front of it. Both register, both are live, and both carry the
-    # same session id -- which is the thread -- so the row grew a second
-    # square for a conversation that had not gained anything.
+    # A conversation can be running in more than one process at once -- the
+    # same session resumed in a second tab -- and both register with the same
+    # session id, which would be a second square for a conversation that had
+    # not gained anything.
     #
-    # The newest process is the one kept, since it is the one the editor just
-    # attached to a window; the status is the busiest of them, because a
-    # thread with work running in any of its processes is working.
+    # The newest process is the one kept, since it is the one most recently
+    # attached to; the status is the busiest of them, because a conversation
+    # with work running in any of its processes is working.
     | group_by(.sessionId // ("pid:" + (.pid | tostring)))
     | map(
         (any(.[]; .status == "busy")) as $busy
@@ -364,62 +343,12 @@ snapshot() {
     # No apostrophes in here: the jq program is single-quoted, and one would
     # end it.
     def keep:
-      $filter == "all" or (.agent == "zed" and (.conversation == true));
+      $filter == "all" or (.agent == "corkboard" and (.conversation == true));
 
-    # Two characters of a project name: the first two letters, since a project
-    # name is a word rather than a derived session name with its
-    # distinguishing part on the end.
-    def projectChip($name):
-      (($name // "") | ascii_upcase | gsub("[^A-Z0-9]"; ""))[0:2];
-
-    # One square per project, not per thread.
-    #
-    # A click can only ever land on a project: Zed has no way in from outside
-    # to select one thread of several -- its CLI knows paths and nothing else,
-    # and the selection in the panel lives in its own sqlite -- so a square per
-    # thread promised something the click could not keep. A square per project
-    # says exactly what clicking it does.
-    #
-    # Done here rather than in local_sessions so it covers the sessions other
-    # machines publish as well. A guest running this same script has grouped
-    # its own already, which is why the thread count is summed rather than
-    # counted: one square standing for three threads has to contribute three.
-    #
-    # Only the editor threads are grouped. A session in a terminal is reached
-    # through its own process and tab, so it stays a square of its own -- which
-    # only shows up under CLAUDE_READY_AGENTS=all anyway.
-    #
-    # Grouped by cwd rather than by name: a thread given its own git worktree
-    # (see the swarm note in zed.nix) is a different checkout and gets its own
-    # window, so it is honestly a different square.
-    def byProject:
-      [ .[] | select(.agent != "zed") ]
-      + ( [ .[] | select(.agent == "zed") ]
-          | group_by([ .origin, (.cwd // "") ])
-          | map(
-              (sort_by(.startedAt // 0) | last) as $newest
-              | (($newest.cwd // "") | split("/") | last) as $project
-              | $newest + {
-                  name: $project,
-                  # The project is the label and the tooltip line now, so the
-                  # topic of whichever thread happened to be newest would be a
-                  # caption for the wrong thing.
-                  topic: null,
-                  label: projectChip($project),
-                  # Waiting on you beats working: that is what a glance at the
-                  # bar is for, and a project with one thread done and two
-                  # still going is a project worth going to.
-                  status: (
-                    if any(.[]; .status == "waiting") then "waiting"
-                    elif any(.[]; .status == "idle") then "idle"
-                    else "busy" end
-                  ),
-                  threads: (map(.threads // 1) | add),
-                }
-            )
-        );
-
-    (($here + ($elsewhere | map(select(keep)))) | byProject) as $sessions
+    # One square per session, not per project: a click lands on the session
+    # itself, its tab in its corkboard window (claude-session-focus), so a
+    # square can promise exactly that.
+    ($here + ($elsewhere | map(select(keep)))) as $sessions
     | {
         ready: ([$sessions[] | select(.status == "idle" or .status == "waiting")] | length),
         busy: ([$sessions[] | select(.status == "busy")] | length),

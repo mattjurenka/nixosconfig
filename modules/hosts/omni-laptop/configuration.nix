@@ -111,7 +111,7 @@
         # Three things had to go with it, none of them optional:
         #
         #   routedEgress (the Steam hole). An assertion in
-        #     modules/features/agent-vm/host.nix refuses it on an open
+        #     ~/corkboard/fleet/host/host.nix refuses it on an open
         #     instance, and is right to: every public address is already
         #     reachable, so the exception would read as a restriction while
         #     granting nothing. Steam now takes the ordinary route.
@@ -225,6 +225,51 @@
             "/home/matthew/verse"
             "/home/matthew/nancy-tracker-onchain"
           ];
+        };
+
+        # Pepper, the personal assistant (~/pepper/.agent/plans/pepper-prd.md),
+        # added 2026-10-24. Headless and allowlisted: it reads personal mail
+        # while holding personal credentials, so the proxy is what stands
+        # between a prompt injection and the internet. Each later addition to
+        # this list is written down with its reason.
+        pepper-vm = {
+          egress = "allowlist";
+          allowedDomains = [
+            # Claude Code, from brain-vm's allowlist (taken from Claude Code's
+            # documented network requirements; the PRD's console.anthropic.com
+            # and statsig.anthropic.com were the earlier wrong guess).
+            # api.anthropic.com carries the API and the WebFetch check;
+            # platform.claude.com OAuth token exchange and refresh; claude.ai
+            # and claude.com the sign-in; code.claude.com the docs lookups.
+            "api.anthropic.com"
+            "platform.claude.com"
+            "claude.ai"
+            "claude.com"
+            "code.claude.com"
+
+            # corkboard's Worker: tasks, plans and memory over MCP, and its
+            # OAuth endpoints.
+            "corkboard.matthewjurenka.workers.dev"
+
+            # Google, read-only, for Phase 3 (calendar.readonly,
+            # gmail.readonly). Each host is its API's rootUrl. No
+            # accounts.google.com: consent runs on the host, so the guest can
+            # spend a token but cannot start a consent of its own.
+            "oauth2.googleapis.com"
+            "www.googleapis.com"
+            "gmail.googleapis.com"
+
+            # Not yet: the Canvas ICS feed's host, until Phase 3 knows it.
+          ];
+
+          headless = true;
+          sshLogin = true;
+
+          # The guest asks for 1536 MiB; this leaves QEMU's own overhead and
+          # the store image's page cache room under the ceiling. Small next
+          # to brain-vm's 14336, but always on alongside it, so it comes out
+          # of what the host keeps.
+          memoryMax = 2048;
         };
       };
     };

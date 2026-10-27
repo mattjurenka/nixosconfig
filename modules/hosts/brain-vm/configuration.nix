@@ -16,7 +16,7 @@
   # --flake /etc/nixos#brain-vm` in there is a real rebuild that survives a
   # power cycle. See `useNixStoreImage` below for what the old two-owner store
   # cost and why it went, and `brain-vm-install-disk` in
-  # modules/features/agent-vm/host.nix for how the disk comes into existence.
+  # ~/corkboard/fleet/host/host.nix for how the disk comes into existence.
   #
   # /var/lib/second-brain/work holds the git checkouts the brain works in and
   # pushes from, with the GitHub PATs wired into `git` and `gh` rather than
@@ -32,7 +32,7 @@
   # survives is the host's forward chain dropping everything addressed into
   # private or link-local space, so the LAN and the router stay unreachable.
   #
-  # See modules/features/agent-vm/host.nix for the half of the boundary the
+  # See ~/corkboard/fleet/host/host.nix for the half of the boundary the
   # guest cannot touch, and my.agentVms.instances.brain-vm on omni-laptop for
   # what opening egress gives up -- it is written out there rather than here,
   # because that is where the choice is expressed.
@@ -149,7 +149,7 @@
       #
       # That hour is also what starved the compositor and got this host
       # power-cycled by hand; see the nix-daemon weights in
-      # ../../features/agent-vm/host.nix, which stay worth having for any other
+      # ~/corkboard/fleet/host/host.nix, which stay worth having for any other
       # heavy guest rebuild.
       #
       # So a version pin here needs a reason. Following the default costs a
@@ -189,6 +189,14 @@
         # bare python3Packages.evdev in systemPackages, because this env is
         # what owns python3 on the guest's PATH -- see ./valheim-client.nix.
         evdev
+
+        # The browser half, added 2026-10-17 with ./browser.nix. It belongs in
+        # *this* env rather than in that file's wrapper for the reason evdev
+        # does: python3 on the guest's PATH is this withPackages environment,
+        # so a Playwright installed anywhere else is a ModuleNotFoundError for
+        # every script under .claude/scripts. The browsers themselves are not
+        # in here -- they come from PLAYWRIGHT_BROWSERS_PATH, set next door.
+        playwright
       ]);
 
       # The guest tty starts at the kernel default 80x24 and stays there, however
@@ -548,7 +556,7 @@
         # of image build for an image nothing uses -- the disk already exists.
         # Instead the disk is installed once, deliberately, by
         # `brain-vm-install-disk`, and `system.build.installDisk` below is what
-        # that script builds. See modules/features/agent-vm/host.nix.
+        # that script builds. See ~/corkboard/fleet/host/host.nix.
         directBoot.enable = false;
         useEFIBoot = true;
 
@@ -1033,7 +1041,7 @@
       # What this discloses, because it is a real widening and should not be
       # discovered by surprise: the tree is the whole repository, so the agent
       # can read the host's own configuration -- including
-      # modules/features/agent-vm/host.nix, which is the firewall and the
+      # ~/corkboard/fleet/host/host.nix, which is the firewall and the
       # cgroup ceiling that contain it. It cannot *apply* any of that; a
       # guest-side rebuild builds a guest-side system, and the host's nftables
       # table and the virtiofsd flags are host processes it has no handle on.
@@ -1405,6 +1413,78 @@
         };
       };
 
+      # corkboard's usage view (nvim/lua/corkboard/usage.lua) reads Claude
+      # Code's session logs to show what each session cost, and the ones
+      # written here are on the guest's disk, out of its sight. So they are
+      # copied out through the outbox, once a minute, beside a manifest that
+      # says what the host can't tell from the copies: which machine they're
+      # from, which account each config dir is logged in as, the cwd each
+      # project's logs ran in, and which host path each guest path is (the
+      # shares, and the checkouts under /var/lib/second-brain/work, which are
+      # clones of the repo shares). A dotfile for the same reason as
+      # .claude-sessions.json: plumbing, not a handoff.
+      systemd.services.claude-usage-publish =
+        let
+          shares = lib.attrValues config.virtualisation.sharedDirectories;
+          repos = lib.filter (s: !s.writable && lib.hasPrefix "/mnt/" s.target) shares;
+          paths =
+            map (s: [ s.target s.source ]) shares
+            ++ map (s: [ "/var/lib/second-brain/work/${baseNameOf s.source}" s.source ]) repos;
+          pathsJson = pkgs.writeText "claude-usage-paths.json" (builtins.toJSON paths);
+          publish = pkgs.writeShellApplication {
+            name = "claude-usage-publish";
+            runtimeInputs = [ pkgs.rsync pkgs.jq pkgs.coreutils pkgs.findutils ];
+            text = ''
+              out=/mnt/outbox/.claude-usage
+              mkdir -p "$out"
+              while true; do
+                accounts='{}'
+                projects='[]'
+                for dir in "$HOME/.claude" "$HOME"/.claude-configs/*; do
+                  [ -d "$dir/projects" ] || continue
+                  name=$(basename "$dir")
+                  json="$dir/.claude.json"
+                  if [ "$name" = .claude ]; then
+                    name=default
+                    json="$HOME/.claude.json"
+                  fi
+                  email=$(jq -r '.oauthAccount.emailAddress // empty' "$json" 2>/dev/null || true)
+                  accounts=$(jq -c --arg k "$name" --arg v "''${email:-$name}" '. + {($k): $v}' <<<"$accounts")
+                  # Logs and subagents' meta only: no file-history, no todos.
+                  rsync -rt --delete --include='*/' --include='*.jsonl' --include='*.meta.json' --exclude='*' \
+                    --prune-empty-dirs "$dir/projects/" "$out/$name/projects/"
+                  for p in "$dir"/projects/*/; do
+                    log=$(find "$p" -maxdepth 1 -name '*.jsonl' -print -quit)
+                    [ -n "$log" ] || continue
+                    cwd=$(jq -r 'select(.cwd) | .cwd' "$log" 2>/dev/null | head -1 || true)
+                    [ -n "$cwd" ] || continue
+                    projects=$(jq -c --arg c "$name" --arg d "$(basename "$p")" --arg w "$cwd" \
+                      '. + [{config: $c, dir: $d, cwd: $w}]' <<<"$projects")
+                  done
+                done
+                jq -n --arg m ${lib.escapeShellArg vm.name} --argjson a "$accounts" --argjson p "$projects" \
+                  --slurpfile paths ${pathsJson} '{machine: $m, accounts: $a, projects: $p, paths: $paths[0]}' \
+                  >"$out/.manifest.json.tmp"
+                mv "$out/.manifest.json.tmp" "$out/manifest.json"
+                sleep 60
+              done
+            '';
+          };
+        in
+        {
+          description = "Copy this guest's Claude Code session logs to the host, for corkboard's usage view";
+          wantedBy = [ "multi-user.target" ];
+          after = [ "mnt-outbox.mount" ];
+          requires = [ "mnt-outbox.mount" ];
+          serviceConfig = {
+            User = "claude";
+            Group = "users";
+            ExecStart = lib.getExe publish;
+            Restart = "always";
+            RestartSec = 30;
+          };
+        };
+
       systemd.services.memory-reflect = {
         description = "Promote yesterday's daily log into MEMORY.md";
         after = [ "network.target" "mnt-vault.mount" ];
@@ -1774,6 +1854,13 @@
         # modules/features/zed.nix). Renaming it here breaks every remote thread
         # until that file agrees again.
         acpAgent
+
+        # The other half of that panel: what the threads running in here left
+        # going in the background, which the panel itself never shows. Here
+        # rather than only on the host because the shells are in here, and a
+        # Zed task opened in an SSH project runs on this side -- see
+        # modules/features/claude-shells.nix.
+        (self.lib.mkClaudeShells { inherit pkgs; })
 
         # The wrapper, not pkgs.gh: see ghWrapped above. The resolver is on PATH
         # too, so `brain-github-token <owner>` is how a console answers "do I

@@ -29,6 +29,19 @@
       config.flake.modules.homeManager.adaptiveDisplay
       # Zed with Claude Code in its agent panel; see modules/features/zed.nix.
       config.flake.modules.homeManager.zed
+      # The day read off the Claude calendar: a notification per block, a line
+      # in the bar, and YouTube and Steam closed until the day is planned. See
+      # modules/features/dayplan.nix, and dayplan/setup.md for the credential
+      # and the phone, neither of which can live here.
+      config.flake.modules.homeManager.dayplan
+      # Which program opens what, instead of whichever app installed itself
+      # last; see modules/features/mime-defaults.nix. It names the viewers
+      # installed from home.packages below, so the two move together.
+      config.flake.modules.homeManager.mimeDefaults
+      # Mod+V: talk to Claude out loud. whisper for the microphone, piper for
+      # the speakers, the subscription in ~/.claude in between. The keybind
+      # itself lives in niri.nix, which is where every other one does.
+      config.flake.modules.homeManager.voice
       inputs.spicetify-nix.homeManagerModules.default
     ];
 
@@ -163,6 +176,21 @@
       # which is exactly the drift a declarative system exists to avoid.
       obsidian
       vlc
+      # Coursework arrives as .docx and job postings as flyers in it, and
+      # nothing on this machine could open either -- no handler was registered
+      # for the mime type at all. The full suite rather than AbiWord because
+      # the files in question are image-heavy layout, which a light word
+      # processor reflows into nonsense.
+      #
+      # Deliberately `libreoffice`, not `libreoffice-fresh`: upstream changed
+      # its versioning and nixpkgs now prints a deprecation warning for the
+      # fresh/still attributes. Both resolve to 26.8 here anyway.
+      #
+      # Spell dictionaries are not overridden on purpose. They come from
+      # `langs` on libreoffice-unwrapped, so naming one takes the build off the
+      # binary cache and compiles the suite from source; the default set
+      # already covers en-US.
+      libreoffice
       # Minecraft: the launcher fetches the game itself at runtime, and its
       # nixpkgs wrapper supplies the JDKs plus the GL/GLFW/OpenAL libraries the
       # game expects to find outside the store.

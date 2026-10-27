@@ -16,6 +16,10 @@
       # kernel's rather than the network's. Ordered after it for reading: the
       # client is the reason, this is the mechanism.
       self.modules.nixos.brainVmGpu
+      # Chromium and a wallet extension, driveable from Python. Last because
+      # it is the only one of these that depends on another: the browser runs
+      # on the X server brainVmGpu puts up.
+      self.modules.nixos.brainVmBrowser
     ];
   };
 }

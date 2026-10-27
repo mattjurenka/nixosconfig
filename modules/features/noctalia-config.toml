@@ -37,7 +37,7 @@ margin_ends = 8
 padding = 8
 radius = 8
 scale = 1.05
-start = [ "workspaces", "spacer_2", "claude", "spacer_2", "active_window" ]
+start = [ "workspaces", "spacer_2", "dayplan", "spacer_2", "claude", "spacer_2", "active_window" ]
 
 [calendar.account.claude_cal]
 type = "google"
@@ -190,3 +190,10 @@ type = "jurenka/claude-status:indicator"
 # which is why it stays: only the plugins block is shadowed.
 [widget.brightness]
 type = "jurenka/brightness-modes:buttons"
+
+# Registered over IPC from modules/features/dayplan.nix, same as
+# brightness-modes and for the same reason; this binding is the half that does
+# work from here. What block is running, how much of it is left and what comes
+# next -- or a padlock until the day has been planned.
+[widget.dayplan]
+type = "jurenka/dayplan:block"

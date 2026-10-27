@@ -1,0 +1,14 @@
+# Index of the plugins this source ships. noctalia reads it to list and
+# compat-check the source; each plugin's own plugin.toml stays authoritative.
+[[plugin]]
+id = "jurenka/dayplan"
+name = "Dayplan"
+version = "1.0.0"
+updated_at = 1760227200
+added_at = 1760227200
+author = "matthew"
+license = "MIT"
+icon = "calendar-clock"
+description = "The block you are supposed to be in right now, how long is left of it and what comes next, read off the Claude calendar."
+plugin_api = 26
+tags = ["calendar", "focus"]

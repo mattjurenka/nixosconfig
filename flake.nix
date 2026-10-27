@@ -41,6 +41,12 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # See modules/features/corkboard.nix.
+    corkboard = {
+      url = "path:/home/matthew/corkboard";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
   };
 
   outputs = inputs: inputs.flake-parts.lib.mkFlake

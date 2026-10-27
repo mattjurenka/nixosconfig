@@ -1,0 +1,29 @@
+id = "jurenka/dayplan"
+name = "Dayplan"
+version = "1.0.0"
+# 26 is the ceiling this shell (noctalia 5.2.1) accepts, and it covers what
+# both halves use: declarative ui.* in a bar widget and in a panel, runStream,
+# noctalia.json and closure callbacks.
+plugin_api = 26
+author = "matthew"
+license = "MIT"
+dependencies = []
+tags = ["calendar", "focus"]
+icon = "calendar-clock"
+description = "The block you are supposed to be in right now, how long is left of it and what comes next, read off the Claude calendar."
+
+[[widget]]
+id = "block"
+entry = "block.luau"
+
+# The whole day behind the bar line. Panel size is host-owned -- declared here,
+# never measured from the content -- so this is the arithmetic of what
+# panel.luau draws at its widest: a header row, up to MAX_ROWS of 30px, 2px
+# gaps and 10px of padding top and bottom. A plan runs 8-14 blocks, so the
+# column centres itself inside whatever is left over rather than stacking from
+# the top and leaving the slack in one lump at the bottom.
+[[panel]]
+id = "today"
+entry = "today.luau"
+width = 360
+height = 540

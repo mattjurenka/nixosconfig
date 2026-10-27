@@ -10,6 +10,9 @@
       self.modules.nixos.agentVmHost
       self.modules.nixos.claude-code
       self.modules.nixos.claude-desktop
+      self.modules.nixos.corkboard
+      self.modules.nixos.expressvpn
+      self.modules.nixos.opencode
     ];
   };
 }

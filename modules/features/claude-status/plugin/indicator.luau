@@ -1,18 +1,16 @@
 --!nonstrict
--- Bar widget: how much of the plan is spent, then one square per project with
--- agent threads in it. A project with a thread waiting on you is a filled
--- square in the primary colour; one whose threads are all still working is an
--- outline in the secondary. Either way the square carries two characters of
--- the project name, which is what tells one square from the next.
+-- Bar widget: how much of the plan is spent, then one square per Claude
+-- session in corkboard. A session waiting on you is a filled square in the
+-- primary colour; one still working is an outline in the secondary. Either
+-- way the square carries two characters of its topic, which is what tells one
+-- square from the next.
 --
 -- The squares are the same ones the corner overlay draws over a fullscreen
 -- window, so the readout looks the same whichever surface is showing it.
 --
--- Clicking a square goes to that project in Zed: its window, or a new one over
--- SSH for a project in an agent VM. Which thread the panel then shows is
--- Zed's own business -- nothing outside the editor can select one -- and that
--- is the reason a square is a project rather than a thread. Clicking the
--- capsule around them opens Zed itself.
+-- Clicking a square goes to that session: its corkboard window, on the tab
+-- its terminal is in. Clicking the capsule around them opens corkboard
+-- itself.
 --
 -- Session readings arrive on stdout of the watcher, one JSON line per change,
 -- so that side never polls; update() exists only to notice a stream that has

@@ -22,6 +22,11 @@
         name = "claude-acp";
         text = ''exec ${lib.getExe pkgs.claude-agent-acp} "$@"'';
       })
+
+      # The one thing a thread in the agent panel cannot show: the shells it
+      # started with `run_in_background`. modules/features/claude-shells.nix
+      # has the why; the task below is how it is reached from the editor.
+      (self.lib.mkClaudeShells { inherit pkgs; })
     ];
 
     programs.zed-editor = {
@@ -29,6 +34,30 @@
 
       # Zed finds language servers on its own PATH, not the login shell's.
       extraPackages = [ pkgs.nil ];
+
+      # `task: spawn` in the command palette, which is how the background
+      # shells get a pane without a keybinding to remember. A task runs where
+      # the project lives -- on this machine for a local project and inside
+      # brain-vm for an SSH one -- which is exactly the right rule here,
+      # because the shells it reads are the ones on that same machine. Both
+      # sides carry the command for that reason (environment.systemPackages in
+      # modules/hosts/brain-vm/configuration.nix is the guest's half).
+      #
+      # No `--here`: a thread with its own git worktree works in a directory
+      # beside the project root rather than under it, so filtering by $PWD
+      # would hide exactly the swarm threads this is for. Everything the
+      # machine is running, newest first, and the PROJECT column says whose.
+      #
+      # Merged into ~/.config/zed/tasks.json by label on activation rather than
+      # owned outright, the same way userSettings is -- so a label renamed here
+      # leaves the old entry behind in that file.
+      userTasks = [{
+        label = "claude: background shells";
+        command = "claude-shells";
+        use_new_terminal = false;
+        allow_concurrent_runs = false;
+        reveal = "always";
+      }];
 
       userSettings = {
         # claude-agent-acp is the Claude Agent SDK wrapped in ACP. nixpkgs

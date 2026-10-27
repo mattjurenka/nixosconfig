@@ -32,14 +32,32 @@ minBrightness=@minBrightness@
 dayElevation=@dayElevation@
 nightElevation=@nightElevation@
 
+# The overlay's end of the job, and where it reaches full strength. Below
+# nightElevation the backlight has already bottomed out, so this is the only
+# thing left that can make the screen darker -- see screen-dim.qml for why it
+# is a black sheet rather than a gamma ramp.
+nightDim=@nightDim@
+dimElevation=@dimElevation@
+
+# The blackest sheet anything here will ask for. The overlay clamps at 0.9 of
+# its own accord as a last resort; this is the lower, deliberate limit that
+# the curve and the Fn keys work inside.
+maxDim=@maxDim@
+
 intervalSeconds=@intervalSeconds@
 
 stateDir="${XDG_RUNTIME_DIR:-/tmp}/adaptive-display"
 modeFile="$stateDir/mode"
+dimFile="$stateDir/dim"
 
 # How far the backlight must sit from our last write before we read it as a
 # person having moved it rather than as rounding.
 nudgeThreshold=0.02
+
+# The same idea for the sheet. Larger than nudgeThreshold in proportion to
+# the range it covers: a dim step from the Fn keys is 0.2 wide, so nothing
+# smaller than that is a person.
+dimNudgeThreshold=0.05
 
 # How far the target must move before we bother writing. At 1% of the range
 # this is roughly one write a minute through the steepest part of a twilight
@@ -99,6 +117,26 @@ brightnessFor() {
   '
 }
 
+# Elevation -> how black a sheet to lay over the screen, for the stretch of
+# twilight below where the backlight gave up. Smoothstepped like the backlight
+# ramp, and starting exactly where that one ends, so the two read as one
+# continuous dimming rather than as a handover between two mechanisms.
+dimFor() {
+  awk -v e="$1" -v lo="$dimElevation" -v hi="$nightElevation" -v maxDim="$nightDim" '
+    BEGIN {
+      # A window of zero or less has no ramp in it. Treat it as a step at the
+      # bottom rather than dividing by it, which would put a nan in the file
+      # the overlay reads.
+      if (hi - lo <= 0) { printf "%.4f\n", (e <= lo) ? maxDim : 0; exit }
+
+      t = (e - lo) / (hi - lo)
+      if (t < 0) t = 0
+      if (t > 1) t = 1
+      printf "%.4f\n", maxDim * (1 - (t * t * (3 - 2 * t)))
+    }
+  '
+}
+
 # Which flat of the curve, or the ramp between them, the schedule is on now.
 regimeFor() {
   awk -v t="$1" -v nb="$nightBrightness" -v db="$dayBrightness" '
@@ -153,12 +191,50 @@ applyBrightness() {
     backlight "$device" "$raw" >/dev/null 2>&1
 }
 
+# The overlay reads this file and nothing else, so this is the whole of the
+# interface between the two halves of the dimming.
+#
+# Written in place rather than through a temporary file and a rename, which is
+# what the mode file does: the overlay holds a watch on this path, and
+# replacing the inode under it takes the watch with it. The cost is that a
+# read can land in the gap between the truncate and the write; the overlay
+# treats an unparseable value as "caught mid-write" and keeps the last good
+# one, and the write it was caught in the middle of arrives as another change
+# a moment later.
+applyDim() {
+  if [ -z "$lastDim" ] || [ "$(awk -v a="$1" -v b="$lastDim" \
+      'BEGIN { d = a - b; if (d < 0) d = -d; print (d > 0.005) ? "yes" : "no" }')" = "yes" ]; then
+    printf '%s\n' "$1" > "$dimFile"
+    # Reported here rather than alongside the backlight, because the two no
+    # longer move together: once the panel is on its floor the sheet is the
+    # only thing left changing, and a tick that writes one but not the other
+    # would otherwise go by in silence -- which is the state of affairs this
+    # log is most wanted for.
+    echo "sheet ${lastDim:-none} -> $1"
+    lastDim="$1"
+  fi
+}
+
 readNormalized() {
   # `brightness` rather than `actual_brightness`: this panel reports a lower
   # `actual_brightness` than was ever requested (39321 set, 32718 read back),
   # because the firmware dims on its own. `brightness` is the requested value,
   # and the only one that reflects an intent worth respecting.
   awk -v r="$(cat "$backlight/brightness")" -v m="$maxRaw" 'BEGIN { printf "%.4f\n", r / m }'
+}
+
+
+readDim() {
+  # The file may not exist yet on the first tick of a fresh session, and may
+  # be caught between the truncate and the write of either writer. Both read
+  # as "no sheet", which is the same answer the overlay gives itself and so
+  # cannot put the two of them out of step.
+  dim=0
+  if [ -r "$dimFile" ]; then
+    read -r raw < "$dimFile" || raw=""
+    dim="$(awk -v v="$raw" 'BEGIN { print (v + 0 == v && v >= 0 && v <= 1) ? v : 0 }')"
+  fi
+  echo "$dim"
 }
 
 # What the person has added to or taken off the curve by hand, and the state
@@ -169,6 +245,9 @@ regime=""
 lastSet=""
 lastTarget=""
 lastNonce=""
+lastDim=""
+dimOffset=0
+lastDimTarget=""
 
 while :; do
   # Arm the watch before reading any state rather than after acting on it.
@@ -204,18 +283,25 @@ while :; do
     regime=""
     lastSet=""
     lastTarget=""
+    dimOffset=0
+    lastDimTarget=""
 
     case "$mode" in
-      min)  preset="$minBrightness" ;;
-      half) preset=0.5 ;;
-      max)  preset=1.0 ;;
-      *)    preset="" ;;
+      min)  preset="$minBrightness"; presetDim="$nightDim" ;;
+      half) preset=0.5;               presetDim=0 ;;
+      max)  preset=1.0;               presetDim=0 ;;
+      *)    preset="";                presetDim="" ;;
     esac
 
     if [ -n "$preset" ]; then
       preset="$(clampBrightness "$preset")"
+      # The sheet before the backlight, so a jump up to full is never seen
+      # through one that is still fading out. "Minimum" means both halves now:
+      # the panel at its floor and the overlay at full strength, which is as
+      # dark as this machine goes.
+      applyDim "$presetDim"
       if applyBrightness "$preset"; then
-        echo "mode $mode: holding at $preset"
+        echo "mode $mode: holding at $preset, dim $presetDim"
       else
         echo "mode $mode: SetBrightness refused; leaving the backlight alone"
       fi
@@ -226,37 +312,83 @@ while :; do
     elevation="$(sunElevation "$(date +%s)")"
     target="$(brightnessFor "$elevation")"
     currentRegime="$(regimeFor "$target")"
+    curveDim="$(dimFor "$elevation")"
     actual="$(readNormalized)"
+    actualDim="$(readDim)"
 
     if [ "$currentRegime" != "$regime" ]; then
       # A nudge made in daylight should not still be in force at midnight, so
-      # crossing into a new regime forgives it and hands the curve back.
+      # crossing into a new regime forgives it and hands the curve back. Both
+      # halves of it: the sheet is as much a preference as the backlight is,
+      # and forgiving one without the other would leave the screen in a state
+      # neither the person nor the curve ever asked for.
       regime="$currentRegime"
       offset=0
-    elif [ -n "$lastSet" ]; then
-      # Anything that moved the backlight other than us -- the Fn keys,
-      # noctalia's slider -- is a preference, not drift to be corrected. Keep
-      # it as a signed offset so adaptation carries on around what was asked
-      # for instead of overwriting it a minute later.
-      offset="$(awk -v a="$actual" -v s="$lastSet" -v t="$lastTarget" -v o="$offset" -v thr="$nudgeThreshold" '
-        BEGIN {
-          drift = a - s
-          if (drift < 0) drift = -drift
-          if (drift <= thr) { print o; exit }
-          shifted = a - t
-          if (shifted >  0.9) shifted =  0.9
-          if (shifted < -0.9) shifted = -0.9
-          printf "%.4f\n", shifted
-        }
-      ')"
+      dimOffset=0
+    else
+      if [ -n "$lastSet" ]; then
+        # Anything that moved the backlight other than us -- the Fn keys,
+        # noctalia's slider -- is a preference, not drift to be corrected.
+        # Keep it as a signed offset so adaptation carries on around what was
+        # asked for instead of overwriting it a minute later.
+        offset="$(awk -v a="$actual" -v s="$lastSet" -v t="$lastTarget" -v o="$offset" -v thr="$nudgeThreshold" '
+          BEGIN {
+            drift = a - s
+            if (drift < 0) drift = -drift
+            if (drift <= thr) { print o; exit }
+            shifted = a - t
+            if (shifted >  0.9) shifted =  0.9
+            if (shifted < -0.9) shifted = -0.9
+            printf "%.4f\n", shifted
+          }
+        ')"
+      fi
+
+      if [ -n "$lastDim" ]; then
+        # The same reading of the dim file, for the same reason. The only
+        # other writer is screen-brightness, which is the Fn keys arriving
+        # below the backlight's floor -- so a value here that is not the one
+        # we last wrote is a person asking for it.
+        dimOffset="$(awk -v a="$actualDim" -v s="$lastDim" -v t="$lastDimTarget" -v o="$dimOffset" -v thr="$dimNudgeThreshold" '
+          BEGIN {
+            drift = a - s
+            if (drift < 0) drift = -drift
+            if (drift <= thr) { print o; exit }
+            printf "%.4f\n", a - t
+          }
+        ')"
+      fi
     fi
 
     apply="$(clampBrightness "$(awk -v t="$target" -v o="$offset" 'BEGIN { printf "%.4f\n", t + o }')")"
 
+    # The invariant the Fn keys are built on: the sheet exists only while the
+    # backlight is on its floor. A positive offset has taken the panel off the
+    # floor, and a sheet over a backlight that still has room to move would
+    # make one brightness expressible two ways -- which is exactly what makes
+    # a pair of keys feel broken, since the one they move need not be the one
+    # the eye is reading.
+    applyDimTarget="$(awk -v c="$curveDim" -v o="$dimOffset" -v a="$apply" \
+        -v floor="$minBrightness" -v maxDim="$maxDim" '
+      BEGIN {
+        if (a > floor + 0.0005) { print "0.0000"; exit }
+        v = c + o
+        if (v < 0) v = 0
+        if (v > maxDim) v = maxDim
+        printf "%.4f\n", v
+      }
+    ')"
+
+    # Outside the write-threshold test the backlight gets below: the sheet is
+    # the only thing still moving once the panel has bottomed out, so a tick
+    # that decides the backlight has nothing to do still has this to do.
+    # applyDim does its own thresholding.
+    applyDim "$applyDimTarget"
+
     if [ -z "$lastSet" ] || [ "$(awk -v a="$apply" -v c="$actual" -v thr="$writeThreshold" \
         'BEGIN { d = a - c; if (d < 0) d = -d; print (d > thr) ? "yes" : "no" }')" = "yes" ]; then
       if applyBrightness "$apply"; then
-        echo "sun ${elevation}deg, ${currentRegime}: curve ${target}, offset ${offset} -> ${apply}"
+        echo "sun ${elevation}deg, ${currentRegime}: curve ${target}, offset ${offset} -> ${apply}, dim ${applyDimTarget}"
         lastSet="$apply"
       else
         # Most likely the session is not active: another VT holds it, or it is
@@ -267,6 +399,7 @@ while :; do
     fi
 
     lastTarget="$target"
+    lastDimTarget="$curveDim"
   fi
 
   # Blocks until the mode file is replaced or the interval runs out, whichever

@@ -1,10 +1,11 @@
-# A taskbar readout of which Claude Code agent threads are waiting for input.
+# A taskbar readout of which Claude Code sessions are waiting for input.
 #
-# Zed-first since the work moved into the editor: a square stands for a thread
-# in Zed with something said in it, so the row reads like the threads sidebar
-# rather than like a list of everything on the machine with a claude in it, and
-# a click always lands in the editor. claude-ready-watch owns that rule and
-# CLAUDE_READY_AGENTS=all is the way back to the old reading.
+# corkboard-first since the work moved into corkboard (corkboard.nix): a
+# square stands for a Claude session in corkboard, installed or dev, with
+# something said in it, so the row reads like its Claude tabs and card agents
+# rather than like a list of everything on the machine with a claude in it,
+# and a click lands on that session's tab. claude-ready-watch owns that rule
+# and CLAUDE_READY_AGENTS=all is the way back to every session.
 #
 # Two surfaces, one reading: a row of 18x18 squares, one per session, coloured
 # by whether that session is waiting on you and carrying two characters of its
@@ -44,24 +45,17 @@
       colors = config.lib.stylix.colors;
       noctaliaPackage = config.programs.noctalia.package;
 
-      # Raising Zed, which is where the agent threads these squares stand for
-      # actually live: its threads sidebar is the agent view over all of them,
-      # and it is what the bar glyph opens now that the work moved into the
-      # editor. It replaced `kitty claude agents`, which lists only the
-      # sessions started in a terminal -- the exception rather than the rule
-      # here since zed.nix.
-      #
-      # `zeditor` is looked for on the session PATH first on purpose:
-      # home-manager installs it wrapped with the editor's own extraPackages
-      # (nil, see zed.nix) and that wrapper lives in the profile, not in this
-      # package, so starting the binary named here would be starting an editor
-      # without its language servers. The store path is only the backstop for
-      # a caller whose PATH has neither.
-      zedOpen = pkgs.writeShellApplication {
-        name = "claude-zed-open";
+      # What the capsule around the squares opens: corkboard, on the last
+      # project it had open. Its launcher comes from corkboard.nix, which only
+      # this host imports, so it is looked for in the profile rather than
+      # named by store path, and a host without it opens nothing.
+      corkboardOpen = pkgs.writeShellApplication {
+        name = "claude-corkboard-open";
         text = ''
-          zed=$(command -v zeditor || printf '%s' '${lib.getExe' config.programs.zed-editor.package "zeditor"}')
-          exec "$zed" "$@"
+          if command -v corkboard >/dev/null; then exec corkboard "$@"; fi
+          if [ -x '${config.home.profileDirectory}/bin/corkboard' ]; then
+            exec '${config.home.profileDirectory}/bin/corkboard' "$@"
+          fi
         '';
       };
 
@@ -111,22 +105,15 @@
           pkgs.procps
           pkgs.coreutils
           config.programs.kitty.package
-          # For a square standing for a Zed agent thread, which is reached by
-          # the editor rather than by a terminal.
-          zedOpen
-          # flock, so two clicks cannot each open a window for one project.
-          pkgs.util-linux
+          # For a square standing for a session in corkboard: its Neovim is
+          # asked over its socket to show the session's terminal.
+          pkgs.neovim
         ];
         bashOptions = [ "nounset" "pipefail" ];
-        # Which ssh URL names a thread running in an agent VM, as one
-        # origin -> prefix object. The address comes from the same plan
-        # zed.nix builds its ssh_connections from, and the user is the one it
-        # logs in as, so a click and the editor cannot end up pointed at
-        # different machines.
-        text = builtins.replaceStrings [ "@vmProjects@" ] [
-          (builtins.toJSON (
-            lib.mapAttrs (_: vm: "ssh://claude@${vm.guestAddress}") self.lib.agentVm.instances
-          ))
+        # Which corkboard app a session is in, by its bridge's port, so its
+        # window can be told from the other app's on the same project.
+        text = builtins.replaceStrings [ "@corkboardApps@" ] [
+          (builtins.toJSON (self.lib.corkboardAppIds or { }))
         ] (builtins.readFile ./claude-status/claude-session-focus.sh);
       };
 
@@ -142,7 +129,7 @@
           --replace-fail '@watch@' '${lib.getExe claudeReadyWatch}' \
           --replace-fail '@usage@' '${lib.getExe claudeUsageWatch}' \
           --replace-fail '@focus@' '${lib.getExe sessionFocus}' \
-          --replace-fail '@agents@' '${lib.getExe zedOpen}'
+          --replace-fail '@agents@' '${lib.getExe corkboardOpen}'
       '';
 
       # noctalia copies a plugin out of its source when it is enabled, so a new
@@ -189,7 +176,7 @@
       # The watchers print to stdout, the focus helper takes one session from
       # them and the publisher reads a stream of them, so each one is worth
       # running by hand when the indicator does something surprising.
-      home.packages = [ claudeReadyWatch claudeUsageWatch niriFullscreenWatch sessionFocus ntfyPublish zedOpen ];
+      home.packages = [ claudeReadyWatch claudeUsageWatch niriFullscreenWatch sessionFocus ntfyPublish corkboardOpen ];
 
       # niri can say which window a process belongs to, but not which tab
       # inside it, and a square should land on the tab its session is actually
