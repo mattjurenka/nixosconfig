@@ -53,6 +53,23 @@
           octet = 79;
           mac = "52:54:00:c1:a0:04";
         };
+
+        # Slots for spawned agents (corkboard's fleet): no guest of their
+        # own, but whichever spawnable template fleetd starts in them, once.
+        # Two, so a second spawn has somewhere to go while the budget
+        # allows it.
+        agent-0 = mkPlan {
+          name = "agent-0";
+          interface = "agnt0";
+          octet = 80;
+          mac = "52:54:00:c1:a0:10";
+        };
+        agent-1 = mkPlan {
+          name = "agent-1";
+          interface = "agnt1";
+          octet = 81;
+          mac = "52:54:00:c1:a0:11";
+        };
       };
     };
 }

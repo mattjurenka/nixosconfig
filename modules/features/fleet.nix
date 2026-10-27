@@ -1,5 +1,7 @@
 { self, inputs, ... }:
 let
+  slots = { inherit (self.lib.agentVm.instances) agent-0 agent-1; };
+
   # This machine's agents, as corkboard's fleet sees them
   # (~/corkboard/fleet/lib.nix, ~/corkboard/.agent/plans/agent-fleet.md): who
   # each works for (brains), what it can do (capabilities), where it can run
@@ -17,12 +19,7 @@ let
       # repos it builds. Open egress since 2026-10-11 (see
       # my.agentVms.instances.brain-vm on omni-laptop for what that gave up).
       work = {
-        modules = [
-          self.modules.nixos.brainVmConfiguration
-          # The brain *is* Claude Code, so the guest needs it; this module
-          # brings the overlay and the package together.
-          self.modules.nixos.claude-code
-        ];
+        modules = [ self.modules.nixos.brainVmConfiguration ];
         credentials = [ "graph" "github" "google" ];
       };
 
@@ -32,25 +29,9 @@ let
       # injection and the internet. Each later addition to this list is
       # written down with its reason.
       pepper = {
-        modules = [
-          self.modules.nixos.pepperVmConfiguration
-          # Pepper *is* Claude Code; this brings the overlay and the package.
-          self.modules.nixos.claude-code
-        ];
+        modules = [ self.modules.nixos.pepperVmConfiguration ];
         credentials = [ "google" "corkboard" ];
         egress = [
-          # Claude Code, from brain-vm's allowlist (taken from Claude Code's
-          # documented network requirements; the PRD's console.anthropic.com
-          # and statsig.anthropic.com were the earlier wrong guess).
-          # api.anthropic.com carries the API and the WebFetch check;
-          # platform.claude.com OAuth token exchange and refresh; claude.ai
-          # and claude.com the sign-in; code.claude.com the docs lookups.
-          "api.anthropic.com"
-          "platform.claude.com"
-          "claude.ai"
-          "claude.com"
-          "code.claude.com"
-
           # corkboard's Worker: tasks, plans and memory over MCP, and its
           # OAuth endpoints.
           "corkboard.matthewjurenka.workers.dev"
@@ -68,7 +49,37 @@ let
       };
     };
 
+    inherit slots;
+    slotModules = [{
+      # Who may log in to a slot over SSH: `agent-N-ssh` on this host.
+      users.users.claude.openssh.authorizedKeys.keyFiles = [ ../hosts/pepper-vm/authorized-keys ];
+      time.timeZone = "America/Phoenix";
+    }];
+
     capabilities = {
+      # Claude Code, the overlay and the package together. Every agent here
+      # is Claude Code, so every template has it.
+      claude-code = {
+        modules = [ self.modules.nixos.claude-code ];
+        targets = [ "vm" "oci" ];
+        egress = [
+          # From brain-vm's allowlist (taken from Claude Code's documented
+          # network requirements; the PRD's console.anthropic.com and
+          # statsig.anthropic.com were the earlier wrong guess).
+          # api.anthropic.com carries the API and the WebFetch check;
+          # platform.claude.com OAuth token exchange and refresh; claude.ai
+          # and claude.com the sign-in; code.claude.com the docs lookups.
+          "api.anthropic.com"
+          "platform.claude.com"
+          "claude.ai"
+          "claude.com"
+          "code.claude.com"
+        ];
+      };
+
+      # Building and testing a repo: corkboard's, as it is.
+      inherit (inputs.corkboard.lib.fleet.capabilities) coding;
+
       # The host's GPU, and the X server that can use it. Its own capability
       # because it is the host's hardware being shared rather than a package
       # set, and because the boundary it widens is the host kernel's rather
@@ -114,13 +125,23 @@ let
       # one guest until Valheim becomes a template of its own.
       brain-vm = {
         brain = "work";
-        capabilities = [ "valheim" "gpu" "wallet-browser" ];
+        capabilities = [ "claude-code" "valheim" "gpu" "wallet-browser" ];
         environments = [ "local" ];
       };
 
       pepper-vm = {
         brain = "pepper";
+        capabilities = [ "claude-code" ];
         environments = [ "local" ];
+      };
+
+      # A coding agent with no brain and no credentials, spawned into a
+      # slot: `corkboard-fleet spawn coding --repo DIR <task>`. Its work
+      # comes back as commits (`corkboard-fleet fetch`).
+      coding = {
+        capabilities = [ "claude-code" "coding" ];
+        environments = [ "local" ];
+        spawnable = true;
       };
 
       # The browser VM: Chromium with the Claude extension, the whole public
@@ -134,6 +155,6 @@ let
   };
 in
 {
-  flake.lib.fleet = { inherit (fleet) templates environments; };
+  flake.lib.fleet = { inherit (fleet) templates environments slotEgress; };
   flake.nixosConfigurations = fleet.nixosConfigurations;
 }

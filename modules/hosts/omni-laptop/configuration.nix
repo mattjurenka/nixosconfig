@@ -78,7 +78,16 @@
     # Isolated agent VMs: tap devices, the host-side firewall rules the guests
     # cannot reach, and the read-only drop boxes they share. The guests
     # themselves are nixosConfigurations.claude-vm and .brain-vm.
-    my.agentVms = {
+    my.agentVms =
+      let
+        slot = {
+          slot = true;
+          egress = "allowlist";
+          allowedDomains = self.lib.fleet.slotEgress;
+          sshLogin = true;
+          memoryMax = 6144;
+        };
+      in {
       instances = {
         # The browser: its job is the web, so it gets the public internet (and
         # nothing on this LAN). Started by hand with `claude-vm`.
@@ -244,7 +253,23 @@
           # of what the host keeps.
           memoryMax = 2048;
         };
+
+        # Slots for spawned agents (corkboard-fleet spawn): allowlisted to
+        # every spawnable template's hosts, which the fleet works out.
+        # 6 GiB covers `coding` (4 GiB) with QEMU's overhead and the
+        # throttle band under the ceiling.
+        agent-0 = slot;
+        agent-1 = slot;
       };
+
+      # What a slot can be started as, and how big each is.
+      templates = self.lib.fleet.templates;
+
+      # What the agents may have between them, counted the way fleetd does:
+      # brain-vm's and pepper-vm's ceilings while they are up (16 GiB), and
+      # each spawn's template plus 512 MiB. 21 GiB lets one coding agent
+      # run beside both, and makes a second wait. This machine has 22.5.
+      memoryBudget = 21504;
     };
 
     # NetworkManager resets Wi-Fi power saving on every connect, so re-apply
