@@ -1,4 +1,4 @@
-{ self, ... }: {
+{ self, inputs, ... }: {
   # Pepper's sandbox: the personal assistant planned in ~/pepper
   # (.agent/plans/pepper-prd.md). A lightweight, headless guest whose only job
   # is reasoning over APIs -- corkboard's MCP server for tasks, plans and
@@ -64,6 +64,15 @@
         # Repeated from the environment so that an SSH session that loses
         # it (`env -i`, a stray profile) still gets no claude.ai connectors.
         env = claudeCodeEnv;
+
+        # Pepper's memory (corkboard's Worker, ~/corkboard/.agent/plans/memory.md):
+        # each session starts with its context and ends by sending its
+        # transcript. Through the same Pepper token as the MCP server, so a
+        # session with none (the usage review) has no memory hooks either.
+        inherit (inputs.corkboard.lib.fleet.memoryHooks {
+          inherit pkgs lib;
+          tokenFile = "/var/lib/pepper/corkboard-token";
+        }) hooks;
       };
 
       # The MCP servers Claude Code may use, all of them: with this file
