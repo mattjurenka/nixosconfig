@@ -249,6 +249,26 @@ in
         Install.WantedBy = [ "default.target" ];
       };
 
+      # The work brain's vault into its memory in corkboard's Worker, every
+      # 15 minutes, as the bridge (its sign-in). One way until the vault is a
+      # mirror of the memory (~/corkboard/.agent/plans/memory.md, step 5); a
+      # run that finds nothing changed changes nothing.
+      systemd.user.services.corkboard-memory-sync = {
+        Unit.Description = "corkboard: the work brain's vault into its memory";
+        Service = {
+          Type = "oneshot";
+          ExecStart = "${bridge}/bin/corkboard-memory-sync work /home/matthew/second-brain/vault";
+        };
+      };
+      systemd.user.timers.corkboard-memory-sync = {
+        Unit.Description = "corkboard: sync the work brain's vault every 15 minutes";
+        Timer = {
+          OnBootSec = "2min";
+          OnUnitActiveSec = "15min";
+        };
+        Install.WantedBy = [ "timers.target" ];
+      };
+
       # Started by corkboard-dev, not at login.
       systemd.user.services.corkboard-dev = {
         Unit.Description = "corkboard dev bridge, from ~/corkboard";
