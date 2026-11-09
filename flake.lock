@@ -120,8 +120,8 @@
         "nixpkgs-wasm": "nixpkgs-wasm"
       },
       "locked": {
-        "lastModified": 1794193861,
-        "narHash": "sha256-7r2m7vSHCiXOTORKlSx+4VfTlJePCWzmSVIkJWe6dus=",
+        "lastModified": 1794246225,
+        "narHash": "sha256-4WBRgJ4TTTv3BP+MA1OmU9xLaZgmPh+gDk9dTbzeg6Y=",
         "path": "/home/matthew/corkboard",
         "type": "path"
       },
