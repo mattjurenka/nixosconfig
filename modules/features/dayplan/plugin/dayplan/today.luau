@@ -12,9 +12,7 @@
 -- disagree about which block is running.
 
 local DAYPLAN = "@dayplan@"
-local OPEN = "@open@"
-
-local PLANNING_URL = "@planningUrl@"
+local PLAN = @planCommand@
 
 local ROW = 30
 local GAP = 2
@@ -71,6 +69,7 @@ local function render()
   -- the width that the block titles need.
   local STATES = {
     locked = { text = "not planned yet", color = "error" },
+    meditating = { text = "meditating", color = "secondary" },
     unsynced = { text = "calendar not synced", color = "tertiary" },
     done = { text = "done for the day", color = "on_surface_variant" },
   }
@@ -103,7 +102,7 @@ local function render()
   if #blocks == 0 then
     table.insert(rows, ui.label({
       key = "empty",
-      text = 'Nothing planned. Say "plan my day" to Claude.',
+      text = 'Nothing planned. Say "plan my day" to ' .. (reading.assistant or "Claude") .. ".",
       fontSize = 12,
       color = "on_surface_variant",
     }))
@@ -113,12 +112,24 @@ local function render()
     ui.button({
       key = "plan",
       glyph = "message",
-      text = "Plan with Claude",
+      text = "Plan with " .. (reading.assistant or "Claude"),
       variant = "ghost",
       height = ROW,
       width = "fill",
       onClick = function()
-        noctalia.runAsync({ OPEN, PLANNING_URL })
+        noctalia.runAsync(PLAN)
+        panel.close()
+      end,
+    }),
+    ui.button({
+      key = "meditate",
+      glyph = "yoga",
+      text = "Meditate",
+      variant = "ghost",
+      height = ROW,
+      width = "fill",
+      onClick = function()
+        noctalia.runAsync({ DAYPLAN, "meditate" })
         panel.close()
       end,
     }),

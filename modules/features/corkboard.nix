@@ -29,6 +29,9 @@ let
     # The day plan's window (?view=plan) on the installed bridge, as an app
     # of its own: in the launcher, on Mod+P (niri.nix), with its own app_id.
     day-plan = { name = "Day plan"; url = "http://corkboard.localhost:7778/?view=plan"; };
+    # A new user's corkboard (corkboard-fresh, below): its own bridge and
+    # home, gone when its window closes.
+    corkboard-fresh = { name = "corkboard (new user)"; url = "http://fresh.corkboard.localhost:7779/"; };
   };
 in
 {
@@ -38,6 +41,7 @@ in
   flake.lib.corkboardAppIds = {
     "7778" = "corkboard";
     "7777" = "corkboard-dev";
+    "7779" = "corkboard-fresh";
   };
 
   flake.modules.homeManager.corkboard = { pkgs, lib, config, ... }:
@@ -68,6 +72,19 @@ in
             size = ${toString config.stylix.fonts.sizes.terminal},
           }
         '';
+
+      # corkboard's icon in the stylix palette: the repo's is drawn in
+      # Monokai's base16 colors, each of them once, so swapping those hexes
+      # for stylix's recolors it.
+      icon =
+        let
+          c = config.lib.stylix.colors.withHashtag;
+          monokai = { base04 = "#a59f85"; base05 = "#f8f8f2"; base08 = "#f92672"; base0A = "#f4bf75"; base0F = "#cc6633"; };
+        in
+        pkgs.writeText "corkboard.svg" (builtins.replaceStrings
+          (lib.attrValues monokai)
+          (map (n: c.${n}) (lib.attrNames monokai))
+          (builtins.readFile "${inputs.corkboard}/web/public/logo.svg"));
 
       # Projects on other machines, opened over ssh: the bridge copies
       # remoteNvim there with `nix copy` and runs it in place of a local
@@ -153,10 +170,14 @@ in
         # Loopback only: whoever reaches the socket can run code as matthew.
         "CORKBOARD_HOST=127.0.0.1"
         "CORKBOARD_PORT=${toString port}"
-        "CORKBOARD_NAME=${apps.${name}.name}"
+        # Quoted whole, or systemd splits "corkboard (dev)" at the space.
+        "\"CORKBOARD_NAME=${apps.${name}.name}\""
         "CORKBOARD_PLUGINS=${lib.concatStringsSep ":" plugins}"
         "CORKBOARD_REMOTES=${remotes}"
         "CORKBOARD_REMOTE_NVIM=${remoteNvim}"
+        # Pepper beside the day plan (corkboard.plan.claude): the droplet's
+        # pepper login only attaches to its session.
+        "CORKBOARD_PEPPER=pepper@valheim.jurenka.software"
         # A user unit gets almost no PATH, and the Neovim it spawns runs
         # :terminal, LSPs and git, so it gets the login profile's.
         "PATH=${lib.concatStringsSep ":" ([
@@ -188,14 +209,78 @@ in
               ${lib.escapeShellArg apps.day-plan.url}
           '';
         })
+        # The installed corkboard as someone who has never used it: the
+        # bridge in a transient unit, with HOME and the XDG dirs in a
+        # directory made for it, so none of this machine's sign-in, keys,
+        # boards, settings, Neovim config or Claude login reach it. Closing
+        # the window stops the unit (and every Neovim and agent it started)
+        # and deletes the directory. Launched again while open, it brings
+        # that window forward.
+        (pkgs.writeShellApplication {
+          name = "corkboard-fresh";
+          runtimeInputs = [ pkgs.coreutils pkgs.curl pkgs.systemd ];
+          text = ''
+            unit=corkboard-fresh
+            open() {
+              ${lib.getExe app} --name corkboard-fresh --title ${lib.escapeShellArg apps.corkboard-fresh.name} --one \
+                ${lib.escapeShellArg apps.corkboard-fresh.url}
+            }
+            if systemctl --user is-active --quiet "$unit"; then
+              home=$(systemctl --user show "$unit" -P WorkingDirectory)
+              export HOME=$home XDG_CONFIG_HOME=$home/.config
+              exec ${lib.getExe app} --name corkboard-fresh --title ${lib.escapeShellArg apps.corkboard-fresh.name} --one \
+                ${lib.escapeShellArg apps.corkboard-fresh.url}
+            fi
+            systemctl --user reset-failed "$unit" 2>/dev/null || true
+            home=$(mktemp -d "''${XDG_RUNTIME_DIR:-/tmp}/corkboard-fresh.XXXXXX")
+            cleanup() {
+              systemctl --user stop "$unit" 2>/dev/null || true
+              rm -rf "$home"
+            }
+            trap cleanup EXIT INT TERM
+            dirs=(
+              "HOME=$home"
+              "XDG_CONFIG_HOME=$home/.config"
+              "XDG_DATA_HOME=$home/.local/share"
+              "XDG_STATE_HOME=$home/.local/state"
+              "XDG_CACHE_HOME=$home/.cache"
+            )
+            setenv=()
+            for kv in "''${dirs[@]}" \
+              "CORKBOARD_HOST=127.0.0.1" \
+              "CORKBOARD_PORT=7779" \
+              "CORKBOARD_NAME=${apps.corkboard-fresh.name}" \
+              "PATH=/run/wrappers/bin:${config.home.profileDirectory}/bin:/run/current-system/sw/bin"; do
+              setenv+=("--setenv=$kv")
+            done
+            systemd-run --user --quiet --unit "$unit" --working-directory "$home" \
+              "''${setenv[@]}" ${lib.getExe bridge}
+            for _ in $(seq 100); do
+              curl -so /dev/null http://127.0.0.1:7779/ && break
+              sleep 0.2
+            done
+            export "''${dirs[@]}"
+            open
+          '';
+        })
       ];
+
+      xdg.desktopEntries.corkboard-fresh = {
+        name = "corkboard (new user)";
+        genericName = "Editor";
+        comment = "corkboard as a first-time user, reset when closed";
+        exec = "corkboard-fresh";
+        icon = "${icon}";
+        categories = [ "Development" ];
+        settings.StartupWMClass = "corkboard-fresh";
+      };
 
       xdg.desktopEntries.day-plan = {
         name = "Day plan";
         genericName = "Planner";
         comment = "Today's plan, with Pepper beside it";
         exec = "day-plan";
-        icon = "${app}/share/icons/hicolor/scalable/apps/corkboard.svg";
+        icon = "${icon}";
         categories = [ "Office" ];
         settings.StartupWMClass = "day-plan";
       };
@@ -205,7 +290,7 @@ in
         genericName = "Editor";
         comment = "Neovim with the board and agent panels";
         exec = "corkboard %f";
-        icon = "${app}/share/icons/hicolor/scalable/apps/corkboard.svg";
+        icon = "${icon}";
         categories = [ "Development" "TextEditor" ];
         settings.StartupWMClass = "corkboard";
       };
@@ -215,20 +300,9 @@ in
         genericName = "Editor";
         comment = "corkboard from ~/corkboard, on the corkboard project";
         exec = "corkboard-dev";
-        icon = "${app}/share/icons/hicolor/scalable/apps/corkboard.svg";
+        icon = "${icon}";
         categories = [ "Development" "TextEditor" ];
         settings.StartupWMClass = "corkboard-dev";
-      };
-
-      # brain-vm's projects; the window opens wherever its login lands
-      # (/opt/second-brain), and Open project lists the rest of them.
-      xdg.desktopEntries.corkboard-brain-vm = {
-        name = "corkboard (brain-vm)";
-        genericName = "Editor";
-        comment = "corkboard on the second brain VM, over ssh";
-        exec = "corkboard --host brain-vm";
-        icon = "${app}/share/icons/hicolor/scalable/apps/corkboard.svg";
-        categories = [ "Development" "TextEditor" ];
       };
 
       systemd.user.services.corkboard = {
@@ -281,7 +355,11 @@ in
             port = devPort;
             plugins = [ pkgs.vimPlugins.mini-base16 stylixTheme pkgs.vimPlugins.snacks-nvim ];
             path = [ (lib.makeBinPath [ pkgs.bun pkgs.neovim pkgs.ripgrep pkgs.fd ]) ];
-          };
+          } ++ [
+            # The avatar's voice, from node_modules' onnxruntime and sharp,
+            # which the package's autoPatchelf would link.
+            "LD_LIBRARY_PATH=${lib.makeLibraryPath [ pkgs.stdenv.cc.cc.lib pkgs.vulkan-loader ]}"
+          ];
           Restart = "on-failure";
           RestartSec = 2;
         };
@@ -291,6 +369,40 @@ in
   # This host only, like claude-desktop: the input is a path on this
   # machine, so a host without ~/corkboard could not build it.
   flake.modules.nixos.corkboard = {
+    imports = [ inputs.corkboard.nixosModules.fleet ];
     home-manager.users.matthew.imports = [ self.modules.homeManager.corkboard ];
+
+    # Spawned agents, each in a VM of its own (~/corkboard/fleet/host/corkboard.nix):
+    # what this machine lends them. 14 GiB between them leaves the desktop
+    # the ~8 it needs of 22.5; one may ask for 12.
+    services.corkboard.fleet = {
+      enable = true;
+      owner = "matthew";
+      uid = 1002;
+      slots = 8;
+      memoryBudget = 14336;
+      offer = { memory = 12288; cores = 6; };
+      defaultAccount = "personal";
+
+      # Who agents work for is corkboard's (its Brains tab: account,
+      # credentials); this machine has the memory for one of them.
+      # Stable's vault, mounted shared and writable in every spawn for work.
+      bindings.work.shares.vault = {
+        source = "/home/matthew/second-brain/vault";
+        target = "/mnt/vault";
+        writable = true;
+        description = "the work brain's vault (Obsidian, Markdown)";
+      };
+      templates.coding.capabilities = [ "claude-code" "coding" ];
+
+      guestModules = [
+        self.modules.nixos.claude-code
+        {
+          # Who may log in to a slot over SSH.
+          users.users.claude.openssh.authorizedKeys.keyFiles = [ ../hosts/pepper-vm/authorized-keys ];
+          time.timeZone = "America/Phoenix";
+        }
+      ];
+    };
   };
 }

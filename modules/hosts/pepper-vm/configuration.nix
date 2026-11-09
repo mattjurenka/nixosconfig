@@ -68,7 +68,7 @@
         # Pepper's memory (corkboard's Worker, ~/corkboard/.agent/plans/memory.md):
         # each session starts with its context and ends by sending its
         # transcript. Through the same Pepper token as the MCP server, so a
-        # session with none (the usage review) has no memory hooks either.
+        # session with none has no memory hooks either.
         inherit (inputs.corkboard.lib.fleet.memoryHooks {
           inherit pkgs lib;
           tokenFile = "/var/lib/pepper/corkboard-token";
@@ -103,47 +103,10 @@
       managedMcp = {
         mcpServers.corkboard = {
           type = "http";
-          url = "https://corkboard.matthewjurenka.workers.dev/mcp";
+          url = "https://portal.corkboard.fyi/mcp";
           headersHelper = lib.getExe corkboardHeaders;
         };
       };
-
-      # Once a day, Pepper reads the token usage reports corkboard writes
-      # (usage-<project> notes, from nvim/lua/corkboard/usage.lua on the
-      # host) and keeps a note of how to spend fewer tokens. Only corkboard's
-      # tools: in print mode anything else is refused rather than asked.
-      usageReviewPrompt = pkgs.writeText "pepper-usage-review-prompt" ''
-        You are Pepper, Matt's personal assistant. Review his Claude Code token usage and suggest how to reduce it.
-
-        1. Find the usage reports: note_search with kind review and the query "Token usage", then note_read each
-           note whose id starts with usage- (one per project; usage-recommendations is yours, below).
-        2. note_read usage-recommendations, if it exists: what you suggested before, and when.
-        3. Decide on up to five recommendations, ranked by the weekly saving you estimate. Each cites the numbers
-           it rests on (the session, the category, the item, the account and machine where they differ) and says
-           what Matt would change: a CLAUDE.md rule, a habit (shorter sessions, /clear between tasks, a subagent
-           for broad searches), a Claude Code setting, or a change to corkboard itself. Work out which earlier
-           recommendations the numbers now show working, or not. Skip anything the numbers don't support.
-        4. Only if a recommendation is new since the last note and would save more than about $10 a week:
-           create one card for it on that project's board (list_boards; the board whose root is the report's
-           path), titled "Usage: <what to change>", with attention set so Matt sees it, and the numbers in
-           its description. At most one card a run, and none if an open card already has the same aim.
-        5. note_write usage-recommendations (kind review, title "Token usage: recommendations"), replacing it.
-           Start it with today's date, then the recommendations as brief markdown. End it with exactly one
-           fenced ```json block, which corkboard's usage view draws the note from (the markdown is its
-           fallback), in this shape:
-             {"date": "YYYY-MM-DD",
-              "recommendations": [{"title": "what to change, a short line",
-                                   "saving": 12.5,
-                                   "change": "what Matt would do (markdown)",
-                                   "evidence": "the numbers it rests on (markdown)",
-                                   "project": "/the/report's/path",
-                                   "cards": ["TASK-15"]}],
-              "earlier": [{"title": "an earlier recommendation",
-                           "status": "working" | "not working" | "too soon",
-                           "evidence": "what the numbers show (markdown)"}]}
-           saving is the estimated dollars a week, a number. cards are the ids of cards that are about the
-           recommendation: the one you created in step 4, and any open card with the same aim. [] when none.
-      '';
 
       # Phase 0's "done when", as one command. Run it in the guest.
       pepperCheck = pkgs.writeShellApplication {
@@ -156,7 +119,7 @@
 
           # Allowed hosts answer through the proxy (any HTTP status will do:
           # a 4xx from the far end still proves the path).
-          for host in api.anthropic.com claude.ai platform.claude.com corkboard.matthewjurenka.workers.dev oauth2.googleapis.com; do
+          for host in api.anthropic.com claude.ai platform.claude.com portal.corkboard.fyi oauth2.googleapis.com; do
             code=$(curl -s -o /dev/null -w '%{http_code}' -m 15 "https://$host/" || true)
             if [ "$code" != "000" ]; then pass "$host reachable ($code)"; else fail "$host unreachable"; fi
           done
@@ -264,28 +227,6 @@
           unitConfig.StartLimitIntervalSec = 0;
         };
         "serial-getty@${vm.consoleDevice 1}".enable = false;
-
-        pepper-usage-review = {
-          description = "Pepper's daily review of Claude Code token usage";
-          serviceConfig = {
-            Type = "oneshot";
-            User = "claude";
-            Group = "users";
-            WorkingDirectory = "/home/claude";
-          };
-          script = ''
-            exec /run/current-system/sw/bin/claude -p "$(cat ${usageReviewPrompt})" --allowedTools mcp__corkboard
-          '';
-        };
-      };
-
-      systemd.timers.pepper-usage-review = {
-        wantedBy = [ "timers.target" ];
-        timerConfig = {
-          OnCalendar = "*-*-* 17:00";
-          # A day the VM was off runs when it next boots.
-          Persistent = true;
-        };
       };
 
       networking = {

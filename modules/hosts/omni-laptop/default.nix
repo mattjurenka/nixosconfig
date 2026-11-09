@@ -12,6 +12,7 @@
       self.modules.nixos.claude-desktop
       self.modules.nixos.corkboard
       self.modules.nixos.expressvpn
+      self.modules.nixos.lagwatch
       self.modules.nixos.opencode
     ];
   };

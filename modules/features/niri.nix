@@ -35,6 +35,14 @@
         bashOptions = [ "nounset" "pipefail" ];
         text = builtins.readFile ./niri/column-width-toggle.sh;
       };
+
+      # Mod+J / Mod+K, see the binds below.
+      focusVertical = pkgs.writeShellApplication {
+        name = "niri-focus-vertical";
+        runtimeInputs = [ pkgs.jq pkgs.niri ];
+        bashOptions = [ "nounset" "pipefail" ];
+        text = builtins.readFile ./niri/focus-vertical.sh;
+      };
     in
     inputs.wrapper-modules.wrappers.niri.wrap {
       inherit pkgs;
@@ -125,13 +133,16 @@
           "Mod+C".spawn-sh = "voice-ptt";
 
           # corkboard (modules/features/corkboard.nix), from PATH for the same
-          # reason as voice-ptt. Shift opens it on the second brain VM, as the
-          # "corkboard (brain-vm)" launcher entry does.
+          # reason as voice-ptt. Shift opens corkboard-dev, from ~/corkboard.
           "Mod+I".spawn-sh = "corkboard";
-          "Mod+Shift+I".spawn-sh = "corkboard --host brain-vm";
+          "Mod+Shift+I".spawn-sh = "corkboard-dev";
           # The day plan, in its own window (corkboard.nix); again brings it
           # forward.
           "Mod+P".spawn-sh = "day-plan";
+
+          # "It lagged just now", for `lagwatch report` (lagwatch.nix). Only
+          # omni-laptop has lagwatch; elsewhere the key does nothing.
+          "Mod+Ctrl+L".spawn-sh = "lagwatch mark";
 
           "Mod+Q".close-window = {};
           "Mod+Space".spawn-sh = "${lib.getExe noctalia} msg panel-toggle launcher";
@@ -186,8 +197,10 @@
           "Mod+Shift+K".move-window-up = {};
           "Mod+Shift+L".move-column-right = {};
           "Mod+H".focus-column-left = {};
-          "Mod+J".focus-window-down = {};
-          "Mod+K".focus-window-up = {};
+          # Down/up the column, then on to the next/previous workspace once
+          # there is nothing further that way, wrapping round at either end.
+          "Mod+J".spawn-sh = "${lib.getExe focusVertical} down";
+          "Mod+K".spawn-sh = "${lib.getExe focusVertical} up";
           "Mod+L".focus-column-right = {};
 
           "Mod+1".focus-workspace = 1;

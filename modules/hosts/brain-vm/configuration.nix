@@ -1196,6 +1196,10 @@
           PasswordAuthentication = false;
           KbdInteractiveAuthentication = false;
           PermitRootLogin = "no";
+          # Which corkboard terminal a session opened from the fleet view is
+          # in (ssh -o SendEnv), so claude-ready-publish can say so and the
+          # host's away mode knows what it's doing.
+          AcceptEnv = [ "CORKBOARD_BUF" "NVIM" ];
         };
 
         # Host keys are the default pair, generated on first start and kept in
@@ -1423,6 +1427,56 @@
       # shares, and the checkouts under /var/lib/second-brain/work, which are
       # clones of the repo shares). A dotfile for the same reason as
       # .claude-sessions.json: plumbing, not a handoff.
+      # corkboard's MCP server, as the work brain. Its token is the brain's,
+      # minted on the host and written to ~/.config/corkboard/token whenever
+      # corkboard's fleet view opens a session here (nvim/lua/corkboard/fleet.lua);
+      # they last a week. A user-scope server in ~/.claude.json rather than
+      # /etc/claude-code/managed-mcp.json, because a managed one takes over:
+      # every other server (twilio-docs, the verse repos' .mcp.json) would stop.
+      systemd.services.corkboard-mcp =
+        let
+          tokenFile = "/home/claude/.config/corkboard/token";
+          headers = pkgs.writeShellApplication {
+            name = "corkboard-headers";
+            runtimeInputs = [ pkgs.jq ];
+            text = ''
+              if [ -s ${tokenFile} ]; then
+                jq -cn --rawfile t ${tokenFile} '{ Authorization: ("Bearer " + ($t | rtrimstr("\n"))) }'
+              else
+                echo '{}'
+              fi
+            '';
+          };
+          server = builtins.toJSON {
+            type = "http";
+            url = "https://portal.corkboard.fyi/mcp";
+            headersHelper = lib.getExe headers;
+          };
+          add = pkgs.writeShellApplication {
+            name = "corkboard-mcp-add";
+            runtimeInputs = [ pkgs.jq pkgs.coreutils ];
+            text = ''
+              umask 077
+              json=$HOME/.claude.json
+              [ -s "$json" ] || echo '{}' > "$json"
+              jq --argjson s ${lib.escapeShellArg server} '.mcpServers.corkboard = $s' "$json" > "$json.tmp"
+              mv "$json.tmp" "$json"
+            '';
+          };
+        in
+        {
+          description = "Give this guest's Claude Code corkboard's MCP server";
+          wantedBy = [ "multi-user.target" ];
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+            User = "claude";
+            Group = "users";
+            Environment = "HOME=/home/claude";
+            ExecStart = lib.getExe add;
+          };
+        };
+
       systemd.services.claude-usage-publish =
         let
           shares = lib.attrValues config.virtualisation.sharedDirectories;
@@ -1451,6 +1505,7 @@
                   email=$(jq -r '.oauthAccount.emailAddress // empty' "$json" 2>/dev/null || true)
                   accounts=$(jq -c --arg k "$name" --arg v "''${email:-$name}" '. + {($k): $v}' <<<"$accounts")
                   # Logs and subagents' meta only: no file-history, no todos.
+                  mkdir -p "$out/$name/projects"
                   rsync -rt --delete --include='*/' --include='*.jsonl' --include='*.meta.json' --exclude='*' \
                     --prune-empty-dirs "$dir/projects/" "$out/$name/projects/"
                   for p in "$dir"/projects/*/; do

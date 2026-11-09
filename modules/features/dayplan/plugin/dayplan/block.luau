@@ -31,6 +31,7 @@ local PANEL = "jurenka/dayplan:today"
 -- while it shows, so it gets `error`.
 local COLORS = {
   locked = "error",
+  meditating = "secondary",
   running = "primary",
   gap = "on_surface_variant",
   done = "on_surface_variant",

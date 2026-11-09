@@ -44,6 +44,12 @@ in
       inputs.noctalia.homeModules.default
       # ^ Adjust this path based on what the upstream flake names its HM module
     ];
+    # home-manager now ships its own programs.noctalia; keep upstream's instead.
+    disabledModules = [ "programs/noctalia" ];
+
+    # Stylix grew its own noctalia target; this module already maps stylix
+    # colours into noctalia below, and the two fight over font_family.
+    stylix.targets.noctalia.enable = false;
 
     xdg.configFile."noctalia/palettes/customStylix.json".text = let
       sc = config.lib.stylix.colors;

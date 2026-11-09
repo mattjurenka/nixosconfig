@@ -34,6 +34,13 @@
   flake.modules.homeManager.dayplan = { pkgs, lib, config, ... }:
     let
       cfg = config.my.dayplan;
+      # What planning opens: corkboard's day plan window (corkboard.nix's
+      # day-plan) where it's installed, else planningUrl in the browser.
+      planCommand = [
+        "${pkgs.bash}/bin/sh" "-c"
+        ''p=${config.home.profileDirectory}/bin/day-plan; [ -x "$p" ] && exec "$p"; exec ${lib.getExe' pkgs.xdg-utils "xdg-open"} "$0"''
+        cfg.planningUrl
+      ];
 
       # Named once because three places have to agree on them: the directory
       # home-manager links the generated plugin into, the IPC call that points
@@ -55,11 +62,14 @@
         calendar_id = cfg.calendarId;
         day_starts_hour = cfg.dayStartsHour;
         planning_url = cfg.planningUrl;
+        planning_command = planCommand;
         gate_enabled = cfg.gate.enable;
         blocked_app_ids = cfg.gate.blockedAppIds;
         blocked_titles = cfg.gate.blockedTitles;
         title_scope_app_ids = cfg.gate.titleScopeAppIds;
         max_cache_age_minutes = cfg.gate.maxCacheAgeMinutes;
+        # The meditation's window (dayplan.py's open_meditation).
+        terminal = lib.getExe pkgs.kitty;
       });
 
       # niri, notify-send and xdg-open are named by store path rather than left
@@ -68,9 +78,13 @@
       # environment.
       dayplan = pkgs.writeShellApplication {
         name = "dayplan";
-        runtimeInputs = [ pkgs.niri pkgs.libnotify pkgs.xdg-utils ];
+        runtimeInputs = [ pkgs.niri pkgs.libnotify pkgs.xdg-utils pkgs.llama-cpp ];
         bashOptions = [ "nounset" "pipefail" ];
         text = ''
+          export DAYPLAN_EMBED_MODEL=${pkgs.fetchurl {
+            url = "https://huggingface.co/CompendiumLabs/bge-small-en-v1.5-gguf/resolve/main/bge-small-en-v1.5-q8_0.gguf";
+            hash = "sha256-7Djo2hQllrqpExJK5QVQ3ihLaRa/WVd+8vDLlmDC9RQ=";
+          }}
           exec ${lib.getExe pkgs.python3} ${./dayplan/dayplan.py} "$@"
         '';
       };
@@ -89,8 +103,7 @@
           --replace-fail '@dayplan@' '${lib.getExe dayplan}'
         substitute ${./dayplan/plugin/dayplan/today.luau} "$out/dayplan/today.luau" \
           --replace-fail '@dayplan@' '${lib.getExe dayplan}' \
-          --replace-fail '@open@' '${lib.getExe' pkgs.xdg-utils "xdg-open"}' \
-          --replace-fail '@planningUrl@' '${cfg.planningUrl}'
+          --replace-fail '@planCommand@' ${lib.escapeShellArg ("{ " + lib.concatMapStringsSep ", " builtins.toJSON planCommand + " }")}
       '';
 
       # Registers the source and (re-)exports the plugin into the running
@@ -234,7 +247,7 @@
 
           blockedTitles = lib.mkOption {
             type = lib.types.listOf lib.types.str;
-            default = [ "youtube" "twitch" "reddit" "netflix" ];
+            default = [ "youtube" "twitch" "reddit" "netflix" "showdown" ];
             description = ''
               Case-insensitive regexes matched against the title of a window
               whose `app_id` is in <option>titleScopeAppIds</option>.

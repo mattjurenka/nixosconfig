@@ -51,6 +51,8 @@
       settings.auto_reload_config = -1;
     };
     stylix.targets.kitty.enable = true;
+    # rofi isn't used, and stylix's target still sets the renamed programs.rofi.font.
+    stylix.targets.rofi.enable = false;
 
     stylix.targets.vscode.enable = true;
     programs.vscode = {
@@ -162,7 +164,7 @@
 
     home.packages = with pkgs; [
       ripgrep
-      gemini-cli
+      antigravity-cli
       zathura
       nil
       loupe
@@ -171,6 +173,7 @@
       telegram-desktop
       awscli2
       jq
+      gh
       # Viewer for the second brain's vault at ~/second-brain/vault. Managed
       # here rather than run from the AppImage that was sitting in ~/Downloads,
       # which is exactly the drift a declarative system exists to avoid.

@@ -11,6 +11,8 @@ was approved to the end of the day; everything here reads that back.
   dayplan today     today's plan as a list
   dayplan gate      exit 0 if today's plan is approved, 1 if not
   dayplan skip      open the gate for today without a plan (logged)
+  dayplan feeds     minutes of today's feeds used, on every device
+  dayplan meditate  start today's meditation, in its full-screen window
   dayplan sync      refresh the cache now
   dayplan events    today's events as JSON, for whatever is doing the planning
   dayplan auth      one-time OAuth consent for the Calendar API backend
@@ -37,9 +39,11 @@ generates).
 import datetime as dt
 import http.server
 import json
+import math
 import os
 import re
 import secrets
+import socket
 import subprocess
 import sys
 import threading
@@ -75,12 +79,26 @@ DEFAULTS = {
     # is_blocked for why these are two lists rather than one: an app_id is
     # stable, a title is fleeting and browser-only.
     "blocked_app_ids": [r"^steam$", r"^steam_app_\d+", r"^steamwebhelper$", r"^lutris$"],
-    "blocked_titles": [r"youtube", r"twitch", r"reddit", r"netflix"],
+    "blocked_titles": [r"youtube", r"twitch", r"reddit", r"netflix", r"showdown"],
     # Which windows a title rule is allowed to judge. A title only means a
     # website inside a browser; anywhere else "youtube" is as likely to be a
     # filename in an editor or an argument in a shell. `chrom` covers both
     # chromium-browser and the chrome-<hash>-Default windows a PWA gets.
     "title_scope_app_ids": [r"chrom", r"firefox", r"librewolf", r"brave", r"\bzen\b", r"epiphany"],
+    # What the day's allowance of feeds covers, here and on the phone together.
+    "feed_titles": [r"youtube", r"twitch", r"reddit", r"\br/\w{2,21}\b", r"\bshowdown!"],
+    "feeds_limit_minutes": 60,
+    # Below this, a page doesn't fit what it's held to (see drift_watch).
+    "drift_enabled": True,
+    "drift_cut": 0.35,
+    # Windows it leaves alone. A terminal or code editor's title is a command or
+    # a path rather than what's being done, and a terminal closes without asking
+    # what's running in it. The last two are dialogs another app is waiting on.
+    "drift_keep_app_ids": [
+        r"kitty", r"^foot", r"alacritty", r"ghostty", r"wezterm", r"konsole", r"terminal",
+        r"neovide", r"^code", r"^cursor$", r"^dev\.zed\.", r"jetbrains",
+        r"xdg-desktop-portal", r"polkit",
+    ],
     # Opened once a day, the first time the gate has to step in.
     "planning_url": "https://claude.ai/new",
     # How stale the cache may be before the gate stops closing windows. A
@@ -282,7 +300,14 @@ def ical_file(cfg):
     return Path(cfg.get("ical_url_file") or (CONFIG_DIR / "ical-url")).expanduser()
 
 
+# corkboard's node on this machine: where it listens is in the MCP config it
+# writes for sessions, and that config's token reads plans.
+NODE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "corkboard/node"
+
+
 def backend(cfg):
+    if (NODE_DIR / "session-mcp.json").exists() and (NODE_DIR / "session-token").exists():
+        return "node"
     if client_file().exists() and token_file().exists():
         return "api"
     if ical_file(cfg).exists():
@@ -314,12 +339,28 @@ def access_token():
     # it is about to be used for.
     if stored.get("access_token") and stored.get("expires_at", 0) > time.time() + 60:
         return stored["access_token"]
-    got = _post_form(TOKEN_ENDPOINT, {
-        "client_id": client["client_id"],
-        "client_secret": client["client_secret"],
-        "refresh_token": stored["refresh_token"],
-        "grant_type": "refresh_token",
-    })
+    try:
+        got = _post_form(TOKEN_ENDPOINT, {
+            "client_id": client["client_id"],
+            "client_secret": client["client_secret"],
+            "refresh_token": stored["refresh_token"],
+            "grant_type": "refresh_token",
+        })
+    except urllib.error.HTTPError as e:
+        # The token endpoint's body is {"error": "invalid_grant", ...}, not the
+        # API's shape, and invalid_grant is the one that needs a person: the
+        # refresh token is dead (revoked, or seven days old on a client whose
+        # consent screen is still in Testing).
+        try:
+            err = json.loads(e.read().decode())
+        except Exception:
+            err = {}
+        msg = f"token refresh: HTTP {e.code} {err.get('error', e.reason)}"
+        if err.get("error_description"):
+            msg += f": {err['error_description']}"
+        if err.get("error") == "invalid_grant":
+            msg += " -- run `dayplan auth`"
+        raise ApiError(msg) from None
     stored["access_token"] = got["access_token"]
     stored["expires_at"] = time.time() + int(got.get("expires_in", 3600))
     _write_private(token_file(), json.dumps(stored))
@@ -540,6 +581,69 @@ def fetch_api(cfg):
     return out
 
 
+def node_assistant():
+    """The node's default brain, by the name the dropdown's button gives it
+    ("Plan with Pepper"); None when there's no node or it can't be asked."""
+    try:
+        mcp = json.loads((NODE_DIR / "session-mcp.json").read_text())
+        url = urllib.parse.urlsplit(mcp["mcpServers"]["corkboard-memory"]["url"])
+        token = (NODE_DIR / "session-token").read_text().strip()
+        req = urllib.request.Request(
+            f"{url.scheme}://{url.netloc}/api/node/status",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as r:
+            name = json.loads(r.read().decode()).get("default_brain")
+    except Exception:
+        return None
+    return name[:1].upper() + name[1:] if name else None
+
+
+def fetch_node(cfg):
+    """The day plans corkboard's node keeps (accepted on the phone or in the
+    plan window), as the calendar's events would be: each block, and an
+    approval marker from when the day was accepted to its end."""
+    mcp = json.loads((NODE_DIR / "session-mcp.json").read_text())
+    url = urllib.parse.urlsplit(mcp["mcpServers"]["corkboard-memory"]["url"])
+    token = (NODE_DIR / "session-token").read_text().strip()
+    out = []
+    today = plan_date(cfg)
+    for n in range(-3, 5):
+        day = today + dt.timedelta(days=n)
+        req = urllib.request.Request(
+            f"{url.scheme}://{url.netloc}/api/node/plans/{day.isoformat()}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as r:
+            plan = json.loads(r.read().decode())
+        if not plan.get("accepted"):
+            continue
+        midnight = dt.datetime.combine(day, dt.time(0), tz(cfg))
+        for b in plan.get("day", {}).get("blocks", []):
+            out.append({
+                "uid": f"{day}/{b['id']}",
+                "id": b["id"],
+                "title": b.get("title", "(untitled)"),
+                "desc": b.get("desc", ""),
+                "kind": b.get("kind"),
+                "start": midnight + dt.timedelta(minutes=b["start"]),
+                "end": midnight + dt.timedelta(minutes=b["stop"]),
+                "all_day": False,
+            })
+        accepted = dt.datetime.fromisoformat(plan["accepted"].replace("Z", "+00:00")).astimezone(tz(cfg))
+        out.append({
+            "uid": f"{day}/accepted",
+            "id": "accepted",
+            "title": cfg["approval_prefix"],
+            "desc": "",
+            "start": accepted,
+            "end": day_window(cfg, day)[1],
+            "all_day": False,
+        })
+    out.sort(key=lambda e: e["start"])
+    return out
+
+
 def sync(cfg):
     which = backend(cfg)
     if which is None:
@@ -548,13 +652,16 @@ def sync(cfg):
             "or run `dayplan auth` for the Calendar API"
         )
     try:
-        events = fetch_api(cfg) if which == "api" else fetch_ical(cfg)
+        events = {"node": fetch_node, "api": fetch_api, "ical": fetch_ical}[which](cfg)
+        if which == "node":
+            fetch_meditation(cfg)
     except Exception as e:
         return False, f"sync failed ({which}): {e}"
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     payload = {
         "synced_at": _iso(now(cfg)),
         "backend": which,
+        "assistant": node_assistant() if which == "node" else None,
         "events": [dict(e, start=_iso(e["start"]), end=_iso(e["end"])) for e in events],
     }
     tmp = cache_file().with_suffix(".tmp")
@@ -624,12 +731,201 @@ def gate_state(cfg, events=None, age=None):
         events, age = load_cache(cfg)
     for e in events_for(cfg, events, plan_date(cfg)):
         if e["title"].startswith(cfg["approval_prefix"]):
-            return True, "plan approved"
+            # As on the phone, the plan and then the meditation. One the node
+            # can't be asked about doesn't hold the gate.
+            med = load_meditation(cfg) if backend(cfg) == "node" else None
+            if med is None or med["elapsed"] >= med["goal"]:
+                return True, "plan approved"
+            return False, f"meditated {med['elapsed'] // 60} of {med['goal'] // 60}m"
     if age is None:
         return True, "calendar has never synced"
     if age > cfg["max_cache_age_minutes"] * 60:
         return True, f"calendar is {int(age // 60)}m stale -- not enforcing"
     return False, "no approved plan yet"
+
+
+def planned_unmeditated(cfg, events=None, age=None):
+    """Whether the plan is in and only the meditation holds the gate."""
+    is_open, why = gate_state(cfg, events, age)
+    return not is_open and why.startswith("meditated ")
+
+
+# ------------------------------------------------------------------- meditation
+#
+# The phone's morning meditation, kept by corkboard's node (day.ts's
+# meditation:<date>) so the laptop times the same one. While it runs, from
+# whichever device, the laptop is in meditation mode: a full-screen window
+# with the timer in it, and the moment another window takes the focus the
+# meditation pauses -- on the phone too, as it does there when another app
+# comes to the front. Getting on the laptop halfway through is getting off
+# the meditation.
+
+MEDITATION_APP_ID = "dayplan-meditate"
+
+
+def node_call(method, path, owner=False, timeout=10):
+    """corkboard's node on this machine. The sessions' token reads; a start or
+    pause is the user's own (owner-token), as on the phone."""
+    mcp = json.loads((NODE_DIR / "session-mcp.json").read_text())
+    url = urllib.parse.urlsplit(mcp["mcpServers"]["corkboard-memory"]["url"])
+    token = (NODE_DIR / ("owner-token" if owner else "session-token")).read_text().strip()
+    req = urllib.request.Request(
+        f"{url.scheme}://{url.netloc}/api/node/{path}",
+        method=method,
+        data=b"" if method == "POST" else None,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
+def meditation_file():
+    return CACHE_DIR / "meditation.json"
+
+
+def _keep_meditation(m):
+    m["read_at"] = time.time()
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = meditation_file().with_suffix(".tmp")
+    tmp.write_text(json.dumps(m))
+    tmp.replace(meditation_file())
+    return m
+
+
+def fetch_meditation(cfg):
+    with node_call("GET", f"meditation/{plan_date(cfg).isoformat()}") as r:
+        return _keep_meditation(json.loads(r.read().decode()))
+
+
+def meditate(cfg, change):
+    """Start or pause today's meditation, for every device."""
+    with node_call("POST", f"meditation/{plan_date(cfg).isoformat()}/{change}", owner=True) as r:
+        return _keep_meditation(json.loads(r.read().decode()))
+
+
+def load_meditation(cfg):
+    """Today's meditation as last read, timed on to now; None if it's not
+    today's or is too old to go by."""
+    try:
+        m = json.loads(meditation_file().read_text())
+    except Exception:
+        return None
+    if m.get("date") != plan_date(cfg).isoformat() or time.time() - m.get("read_at", 0) > cfg["max_cache_age_minutes"] * 60:
+        return None
+    if m.get("since"):
+        started = dt.datetime.fromisoformat(m["since"].replace("Z", "+00:00")).timestamp()
+        m["elapsed"] = min(m["goal"], m["banked"] + max(0, int(time.time() - started)))
+        m["running"] = m["elapsed"] < m["goal"]
+    return m
+
+
+def meditation_window():
+    return next((w for w in niri_windows() if w.get("app_id") == MEDITATION_APP_ID), None)
+
+
+def open_meditation(cfg, start=False):
+    """The meditation's window, focused, opened if it isn't; with start, the
+    meditation started too."""
+    if start:
+        meditate(cfg, "start")
+    w = meditation_window()
+    if w:
+        subprocess.run(["niri", "msg", "action", "focus-window", "--id", str(w["id"])], capture_output=True)
+        return
+    subprocess.Popen(
+        [cfg.get("terminal", "kitty"), "--class", MEDITATION_APP_ID, "--title", "meditate", sys.executable, sys.argv[0], "meditation-screen"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+    )
+
+
+def meditation_watch(cfg):
+    """Each change to the day object, from the node: a meditation started on
+    the phone brings its window up here within a second."""
+    while True:
+        try:
+            running = fetch_meditation(cfg)["running"]
+            if running:
+                open_meditation(cfg)
+            with node_call("GET", "day/events", timeout=90) as r:
+                for line in r:
+                    if not line.startswith(b"data:"):
+                        continue
+                    m = fetch_meditation(cfg)
+                    if m["running"] and not running:
+                        open_meditation(cfg)
+                    running = m["running"]
+        except Exception as e:
+            print(f"meditation watch: {e}", file=sys.stderr, flush=True)
+        time.sleep(5)
+
+
+def left_meditation(cfg, focused_app):
+    """Another window took the focus, or the meditation's own closed: off it."""
+    if focused_app == MEDITATION_APP_ID:
+        return
+    m = load_meditation(cfg)
+    if not m or not m["running"]:
+        return
+    try:
+        m = meditate(cfg, "pause")
+    except Exception as e:
+        print(f"meditation pause: {e}", file=sys.stderr, flush=True)
+        return
+    notify("Meditation paused", f"{m['elapsed'] // 60} of {m['goal'] // 60}m")
+
+
+def meditation_screen(cfg):
+    """The window's inside: the time left, and space to start or pause."""
+    import curses
+
+    # Full screen as it opens, while it's the focused window.
+    subprocess.run(["niri", "msg", "action", "fullscreen-window"], capture_output=True)
+
+    def draw(scr):
+        curses.curs_set(0)
+        curses.use_default_colors()
+        scr.timeout(250)
+        m, read_at, said_done = load_meditation(cfg), 0.0, False
+        while True:
+            if time.time() - read_at > 3:
+                try:
+                    fetch_meditation(cfg)
+                except Exception:
+                    pass
+                read_at = time.time()
+            m = load_meditation(cfg) or m or {"elapsed": 0, "goal": 1800, "running": False}
+            done = m["elapsed"] >= m["goal"]
+            if done and not said_done:
+                notify("Meditation done", "")
+                said_done = True
+            left = m["goal"] - m["elapsed"]
+            width = 40
+            filled = width * m["elapsed"] // m["goal"]
+            lines = [
+                "meditate",
+                "",
+                "done" if done else f"{left // 60:02d}:{left % 60:02d}",
+                "",
+                "█" * filled + "░" * (width - filled),
+                "",
+                "q" if done else ("space  pause" if m["running"] else "space  start"),
+            ]
+            scr.erase()
+            h, w = scr.getmaxyx()
+            for i, text in enumerate(lines):
+                y, x = h // 2 - len(lines) // 2 + i, max(0, (w - len(text)) // 2)
+                if 0 <= y < h:
+                    scr.addnstr(y, x, text, max(0, w - x - 1), curses.A_BOLD if i == 2 else curses.A_NORMAL)
+            scr.refresh()
+            key = scr.getch()
+            if key in (ord("q"), 27):
+                return
+            if key == ord(" ") and not done:
+                try:
+                    meditate(cfg, "pause" if m["running"] else "start")
+                except Exception:
+                    pass
+
+    curses.wrapper(draw)
 
 
 def niri_windows():
@@ -641,7 +937,7 @@ def niri_windows():
 
 
 def is_blocked(cfg, win):
-    """Whether this window should be closed while the gate is shut.
+    """The rule this window is closed under while the gate is shut, or None.
 
     Two kinds of rule, because a window names itself in two very different
     ways. An `app_id` is stable for as long as the thing runs -- Steam is
@@ -660,21 +956,33 @@ def is_blocked(cfg, win):
     app = win.get("app_id") or ""
     title = win.get("title") or ""
     if any(re.search(p, app, re.I) for p in cfg["blocked_app_ids"]):
-        return True
-    in_scope = any(re.search(p, app, re.I) for p in cfg["title_scope_app_ids"])
-    return in_scope and any(re.search(p, title, re.I) for p in cfg["blocked_titles"])
+        return app
+    if not any(re.search(p, app, re.I) for p in cfg["title_scope_app_ids"]):
+        return None
+    if is_work_page(cfg, title):
+        return None
+    return next((p for p in cfg["blocked_titles"] if re.search(p, title, re.I)), None)
+
+
+def close_window(win):
+    subprocess.run(
+        ["niri", "msg", "action", "close-window", "--id", str(win["id"])],
+        capture_output=True,
+    )
 
 
 def close_blocked(cfg, windows):
-    """Close whichever of these are blocked. -> what got closed, by name."""
+    """Close whichever of these are blocked. -> the rules that closed them,
+    never the windows' titles: a title is the name of what was being watched,
+    and this goes into a notification."""
     closed = []
     for w in windows:
-        if is_blocked(cfg, w):
-            subprocess.run(
-                ["niri", "msg", "action", "close-window", "--id", str(w["id"])],
-                capture_output=True,
-            )
-            closed.append(w.get("title") or w.get("app_id"))
+        rule = is_blocked(cfg, w)
+        if rule:
+            close_window(w)
+            closed.append(rule)
+            if rule != (w.get("app_id") or ""):
+                offer_work(cfg, w.get("title") or "", "Not work")
     if closed:
         announce_gate(cfg, closed)
     return closed
@@ -692,10 +1000,18 @@ def announce_gate(cfg, closed):
     YouTube, which is the moment the point can actually land.
     """
     STATE_DIR.mkdir(parents=True, exist_ok=True)
-    opened = STATE_DIR / f"opened-{plan_date(cfg)}"
-    first = not opened.exists()
     said = STATE_DIR / "gate-notified"
     quiet = said.exists() and time.time() - said.stat().st_mtime < cfg["gate_notify_cooldown_seconds"]
+    if planned_unmeditated(cfg):
+        # Planned already: what's left is the meditation, so it's that window
+        # that comes up, already running.
+        if not quiet:
+            notify("Meditate first", "Closed: " + ", ".join(closed[:3]), urgency="critical")
+            said.touch()
+        open_meditation(cfg, start=True)
+        return
+    opened = STATE_DIR / f"opened-{plan_date(cfg)}"
+    first = not opened.exists()
     if first or not quiet:
         notify(
             "Plan your day first",
@@ -706,9 +1022,10 @@ def announce_gate(cfg, closed):
         said.touch()
     if first:
         opened.touch()
-        if cfg.get("planning_url"):
+        plan = cfg.get("planning_command") or (cfg.get("planning_url") and ["xdg-open", cfg["planning_url"]])
+        if plan:
             subprocess.Popen(
-                ["xdg-open", cfg["planning_url"]],
+                plan,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
 
@@ -768,9 +1085,26 @@ def gate_watch(cfg):
     niri emits a window event on every title change, so the same navigation is
     now caught in milliseconds.
     """
-    decided_at, closed_gate = 0.0, False
+    decided_at, closed_gate, spent = 0.0, False, False
+    # Each window's app_id, for what a focus change lands on.
+    apps = {}
 
     for ev in niri_events():
+        if "WindowsChanged" in ev:
+            apps = {w["id"]: w.get("app_id") or "" for w in ev["WindowsChanged"].get("windows") or []}
+        elif "WindowOpenedOrChanged" in ev and ev["WindowOpenedOrChanged"].get("window"):
+            w = ev["WindowOpenedOrChanged"]["window"]
+            apps[w["id"]] = w.get("app_id") or ""
+        if "WindowFocusChanged" in ev:
+            # Nothing focused is the screen locked or off, which is no use of it.
+            focused = ev["WindowFocusChanged"].get("id")
+            if focused is not None:
+                left_meditation(cfg, apps.get(focused, ""))
+            continue
+        if "WindowClosed" in ev:
+            if apps.pop(ev["WindowClosed"].get("id"), None) == MEDITATION_APP_ID:
+                left_meditation(cfg, "")
+            continue
         # WindowsChanged is the full list, sent on connect. WindowOpenedOrChanged
         # is one window, sent on open and on every title change after.
         if "WindowsChanged" in ev:
@@ -790,9 +1124,306 @@ def gate_watch(cfg):
         if time.time() - decided_at > 5:
             events, age = load_cache(cfg)
             closed_gate = not gate_state(cfg, events, age)[0]
+            spent = feeds_left(cfg, load_feeds(cfg)) <= 0
             decided_at = time.time()
         if closed_gate:
             close_blocked(cfg, windows)
+        elif spent:
+            close_feeds(cfg, windows)
+
+
+# ------------------------------------------------------------------------ drift
+#
+# A browser page that doesn't fit what the day says is happening closes, judged
+# by a small embedding model on this machine: while the gate's shut against
+# "not entertainment", and through each planned block not marked off against
+# that block. "This is work" on the notification lets that page back in for the
+# day. Pages and verdicts stay in this process's memory: a title is the name of
+# what was being watched, so it goes to the local model and no further, not to a
+# file, the journal or a notification.
+
+DRIFT_TICK_SECONDS = 5
+DRIFT_GATE = "Work, planning the day, or useful life admin. Not entertainment or leisure."
+DRIFT_QUERY = "Represent this sentence for searching relevant passages: "
+DRIFT_LEISURE = [
+    "video game", "funny or entertainment video", "social media feed", "movie or TV streaming",
+    "online shopping", "celebrity gossip", "sports news", "memes", "dating",
+    "gameplay and game guides", "anime and TV shows", "reddit humor and pictures",
+    "film trailers and reactions", "fan communities", "gambling and fantasy sports", "pop culture trivia",
+]
+DRIFT_WORK = [
+    "software development", "writing a document", "technical documentation", "email and office admin",
+    "banking and bills", "calendar and planning", "studying a technical subject",
+    "programming tutorial or conference talk", "code repository or pull request", "spreadsheets and budgets",
+    "learning a skill", "comparing products or vendors for a project", "government, health or household errands",
+]
+# A logistic fit over similarity to the block, the leisure list and the work list.
+DRIFT_MEAN, DRIFT_SD = [0.51634, 0.53443, 0.51412], [0.13794, 0.06344, 0.05573]
+DRIFT_WEIGHTS, DRIFT_BIAS = [1.2683, -2.0454, 1.0802], -0.5442
+# A browser's own name after the page's, and what a window says with no page.
+BROWSER_SUFFIX = re.compile(r"\s+[-—–]\s+(mozilla firefox|firefox|chromium|google chrome|brave|zen browser|librewolf|web)( private browsing)?$", re.I)
+NO_PAGE = re.compile(r"^$|^(new tab|new private tab|private browsing|loading|untitled|about:\S*|mozilla firefox|chromium|google chrome|google|duckduckgo|bing|inbox( \(\d+\))?)$", re.I)
+
+_work_pages = {}
+_offered = {}
+
+
+def page_of(title):
+    return BROWSER_SUFFIX.sub("", title).strip()
+
+
+def is_work_page(cfg, title):
+    return _work_pages.get(page_of(title)) == plan_date(cfg).isoformat()
+
+
+def offer_work(cfg, title, why):
+    """A notification for what was just closed, whose "This is work" lets the
+    page back in until the day turns over. It waits on its own thread."""
+    page, at = page_of(title), time.time()
+    if at - _offered.get(page, 0) < 60:
+        return
+    _offered[page] = at
+
+    def ask():
+        try:
+            out = subprocess.run(
+                ["notify-send", "-a", "dayplan", "-u", "critical", "-A", "work=This is work", "--wait", "Closed", why],
+                capture_output=True, text=True, timeout=1800,
+            )
+        except subprocess.TimeoutExpired:
+            return
+        if out.stdout.strip() == "work":
+            _work_pages[page] = plan_date(cfg).isoformat()
+
+    threading.Thread(target=ask, daemon=True).start()
+
+
+class Embedder:
+    """llama-server on loopback, started on first use and again if it dies. Its
+    logging is off and its output dropped, since what it's given are titles."""
+
+    def __init__(self, model):
+        self.model, self.proc, self.port, self.seen = model, None, None, {}
+
+    def start(self):
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            self.port = s.getsockname()[1]
+        self.proc = subprocess.Popen(
+            ["llama-server", "-m", self.model, "--host", "127.0.0.1", "--port", str(self.port),
+             "-t", "2", "-c", "512", "-b", "512", "--no-webui", "--log-disable", "--embedding"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        for _ in range(120):
+            try:
+                with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/health", timeout=2) as r:
+                    if r.status == 200:
+                        return
+            except Exception:
+                time.sleep(0.5)
+        raise RuntimeError("llama-server did not start")
+
+    def __call__(self, text):
+        if text not in self.seen:
+            if self.proc is None or self.proc.poll() is not None:
+                self.start()
+            if len(self.seen) > 2000:
+                self.seen.clear()
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{self.port}/v1/embeddings", json.dumps({"input": text}).encode(),
+                {"content-type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=30) as r:
+                self.seen[text] = json.load(r)["data"][0]["embedding"]
+        return self.seen[text]
+
+
+def _cosine(a, b):
+    return sum(x * y for x, y in zip(a, b)) / (math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(x * x for x in b)))
+
+
+def drift_fit(embed, page, target):
+    """-> how likely, 0 to 1, this page belongs to what it's held to."""
+    v = embed(page)
+    near = lambda anchors: sum(sorted((_cosine(v, embed(DRIFT_QUERY + a)) for a in anchors), reverse=True)[:3]) / 3
+    x = [_cosine(v, embed(DRIFT_QUERY + target)), near(DRIFT_LEISURE), near(DRIFT_WORK)]
+    z = sum(w * (n - m) / s for w, n, m, s in zip(DRIFT_WEIGHTS, x, DRIFT_MEAN, DRIFT_SD)) + DRIFT_BIAS
+    return 1 / (1 + math.exp(-z))
+
+
+def held_to(cfg, events, age):
+    """What a page has to fit right now, or None through a play block: a work
+    or fixed block over anything else, then an off block, and with nothing on,
+    what the gate holds to. As with the gate, not knowing the plan holds nothing."""
+    is_open, why = gate_state(cfg, events, age)
+    if not is_open:
+        return DRIFT_GATE
+    if why != "plan approved" or age is None or age > cfg["max_cache_age_minutes"] * 60:
+        return None
+    t = now(cfg)
+    on = [b for b in blocks_in(cfg, events) if b["start"] <= t < b["end"]]
+    busy = next((b for b in on if b.get("kind") not in ("off", "play")), None)
+    if busy:
+        return busy["title"]
+    if any(b.get("kind") == "play" for b in on):
+        return None
+    return on[0]["title"] if on else DRIFT_GATE
+
+
+def feed_allowed(cfg, events, age, win):
+    """A feed, with the morning done: it runs through blocks on the day's allowance."""
+    return is_feed(cfg, win) and gate_state(cfg, events, age)[0] and feeds_left(cfg, load_feeds(cfg)) > 0
+
+
+def drift_watch(cfg):
+    """Close the focused window once its title has settled and doesn't fit.
+
+    Sampled, and only a title that held across two ticks: a page says "Loading"
+    and its previous name on the way in, and a close here costs the window.
+    Only the focused window, since a reference left on the other monitor isn't
+    what's being done. Marking one as work lets the page back in, in a browser,
+    and elsewhere the whole app, whose title changes as it's used.
+    """
+    embed, last = Embedder(os.environ["DAYPLAN_EMBED_MODEL"]), None
+    while True:
+        time.sleep(DRIFT_TICK_SECONDS)
+        events, age = load_cache(cfg)
+        target = held_to(cfg, events, age)
+        w = next((w for w in niri_windows() if w.get("is_focused")), None)
+        if target is None or w is None:
+            last = None
+            continue
+        app, title = w.get("app_id") or "", w.get("title") or ""
+        if any(re.search(p, app, re.I) for p in cfg["blocked_app_ids"]):
+            close_window(w)
+            continue
+        if feed_allowed(cfg, events, age, w):
+            last = None
+            continue
+        page = page_of(title)
+        if any(re.search(p, app, re.I) for p in cfg["drift_keep_app_ids"]) or NO_PAGE.match(page):
+            last = None
+            continue
+        was, last = last, (w["id"], title)
+        work = title if any(re.search(p, app, re.I) for p in cfg["title_scope_app_ids"]) else app
+        if was != last or is_work_page(cfg, work):
+            continue
+        try:
+            fit = drift_fit(embed, page, target)
+        except Exception as e:
+            # Its type alone: the message of a failed request could carry the text.
+            print(f"drift: {type(e).__name__}", file=sys.stderr, flush=True)
+            continue
+        if fit < cfg["drift_cut"]:
+            close_window(w)
+            last = None
+            offer_work(cfg, work, "Not work" if target == DRIFT_GATE else f"Not {target}")
+
+
+# ------------------------------------------------------------------------ feeds
+#
+# An allowance of feeds a day, this laptop's and the phone's together, after
+# which they close until the day turns over. Nothing here is undone by
+# `dayplan skip`, which is the morning gate's.
+#
+# What's kept is seconds and nothing else. A window's title is the name of the
+# video, so it's matched here and goes no further: not to a file, the journal,
+# a notification or the node.
+
+FEEDS_TICK_SECONDS = 5
+FEEDS_SYNC_SECONDS = 60
+FEEDS_WARN_SECONDS = 10 * 60
+
+
+def feeds_file():
+    return STATE_DIR / "feeds.json"
+
+
+def is_feed(cfg, win):
+    app = win.get("app_id") or ""
+    title = win.get("title") or ""
+    return any(re.search(p, app, re.I) for p in cfg["title_scope_app_ids"]) and any(
+        re.search(p, title, re.I) for p in cfg["feed_titles"]
+    )
+
+
+def load_feeds(cfg):
+    """Today's seconds, each device's; a new day's start at nothing."""
+    day = plan_date(cfg).isoformat()
+    try:
+        f = json.loads(feeds_file().read_text())
+    except Exception:
+        f = {}
+    return f if f.get("date") == day else {"date": day, "laptop": 0, "phone": 0, "warned": False}
+
+
+def save_feeds(f):
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = feeds_file().with_suffix(".tmp")
+    tmp.write_text(json.dumps(f))
+    tmp.replace(feeds_file())
+
+
+def feeds_left(cfg, f):
+    return cfg["feeds_limit_minutes"] * 60 - f["laptop"] - f["phone"]
+
+
+def close_feeds(cfg, windows):
+    closed = [w for w in windows if is_feed(cfg, w)]
+    for w in closed:
+        close_window(w)
+    if not closed:
+        return
+    # A window that ignores the close comes round again on every event.
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    said = STATE_DIR / "feeds-notified"
+    if not said.exists() or time.time() - said.stat().st_mtime >= cfg["gate_notify_cooldown_seconds"]:
+        notify("Feeds used up", "Back tomorrow", urgency="critical")
+        said.touch()
+
+
+def sync_feeds(cfg, f):
+    """Give the node this laptop's count and take the phone's. Unreachable, the
+    count goes on here and catches up later."""
+    try:
+        with node_call("POST", f"feeds/{f['date']}/laptop?seconds={f['laptop']}", owner=True) as r:
+            seen = json.loads(r.read().decode())
+    except Exception as e:
+        print(f"feeds sync: {e}", file=sys.stderr, flush=True)
+        return f
+    return {**f, "laptop": max(f["laptop"], seen["laptop"]), "phone": max(f["phone"], seen["phone"])}
+
+
+def feeds_watch(cfg):
+    """Count the seconds a feed is up, in any window, while the screen's in use.
+
+    Any window rather than the focused one, since a video on the other monitor
+    is still being watched. Sampled rather than event-driven: a count can be a
+    few seconds out, which closing a window can't.
+    """
+    last, synced, carry = time.time(), 0.0, 0.0
+    while True:
+        time.sleep(FEEDS_TICK_SECONDS)
+        t = time.time()
+        # Capped, so a suspend isn't counted as watching.
+        gap, last = min(t - last, FEEDS_TICK_SECONDS * 3), t
+        f = before = load_feeds(cfg)
+        windows = niri_windows()
+        if any(w.get("is_focused") for w in windows) and any(is_feed(cfg, w) for w in windows):
+            carry += gap
+            f = {**f, "laptop": f["laptop"] + int(carry)}
+            carry -= int(carry)
+        if backend(cfg) == "node" and t - synced >= FEEDS_SYNC_SECONDS:
+            synced = t
+            f = sync_feeds(cfg, f)
+        left = feeds_left(cfg, f)
+        if 0 < left <= FEEDS_WARN_SECONDS and not f.get("warned"):
+            f = {**f, "warned": True}
+            notify("Feeds", f"{left // 60}m left today")
+        if f != before:
+            save_feeds(f)
+        if left <= 0:
+            close_feeds(cfg, windows)
 
 
 # ---------------------------------------------------------------- notifications
@@ -848,11 +1479,15 @@ def bar_reading(cfg):
     about which block is running.
     """
     events, age = load_cache(cfg)
+    try:
+        assistant = json.loads(cache_file().read_text()).get("assistant") or "Claude"
+    except Exception:
+        assistant = "Claude"
     if age is None:
         # Two different problems with the same symptom, and the fix for each is
         # a different paragraph of setup.md, so the bar names which one it is.
         missing = "no calendar configured" if backend(cfg) is None else "calendar not synced"
-        return {"state": "unsynced", "text": f"dayplan: {missing}", "glyph": "calendar-off", "blocks": []}
+        return {"state": "unsynced", "text": f"dayplan: {missing}", "glyph": "calendar-off", "blocks": [], "assistant": assistant}
 
     t = now(cfg)
     day = plan_date(cfg)
@@ -862,6 +1497,7 @@ def bar_reading(cfg):
 
     reading = {
         "date": f"{day:%A %b %-d}",
+        "assistant": assistant,
         "blocks": [
             {
                 "title": e["title"],
@@ -875,6 +1511,12 @@ def bar_reading(cfg):
     }
 
     is_open, why = gate_state(cfg, events, age)
+    med = load_meditation(cfg) if backend(cfg) == "node" else None
+    if med and med["running"]:
+        left = (med["goal"] - med["elapsed"] + 59) // 60
+        return dict(reading, state="meditating", text=f"Meditating · {left}m left", glyph="yoga", tooltip=why)
+    if not is_open and med and planned_unmeditated(cfg, events, age):
+        return dict(reading, state="locked", text=f"Meditate first · {med['elapsed'] // 60}/{med['goal'] // 60}m", glyph="lock", tooltip=why)
     if not is_open:
         return dict(reading, state="locked", text="Plan your day first", glyph="lock", tooltip=why)
     if cur:
@@ -898,6 +1540,9 @@ def bar_reading(cfg):
             next=nxt["title"],
             tooltip=f"Next: {nxt['title']} at {fmt(cfg, nxt['start'])}",
         )
+    if age > cfg["max_cache_age_minutes"] * 60:
+        # Nothing left that it knows of isn't the day done: it can't see the day.
+        return dict(reading, state="unsynced", text="dayplan: plan not synced", glyph="calendar-off", tooltip=why)
     return dict(reading, state="done", text="Day's plan done", glyph="check", tooltip=why)
 
 
@@ -1066,6 +1711,11 @@ def daemon(cfg):
     # below still sweeps, as the backstop for windows that were already open
     # when the gate shut.
     _supervise("gate-watch", gate_watch, cfg)
+    _supervise("feeds-watch", feeds_watch, cfg)
+    if cfg["drift_enabled"] and os.environ.get("DAYPLAN_EMBED_MODEL"):
+        _supervise("drift-watch", drift_watch, cfg)
+    if backend(cfg) == "node":
+        _supervise("meditation-watch", meditation_watch, cfg)
 
     last_sync = 0.0
     while True:
@@ -1128,6 +1778,13 @@ def main(argv):
         with open(STATE_DIR / "skips.log", "a") as f:
             f.write(f"{_iso(now(cfg))} skipped planning\n")
         print(f"Gate open for {plan_date(cfg)}. Logged to {STATE_DIR / 'skips.log'}")
+    elif cmd == "feeds":
+        f = load_feeds(cfg)
+        print(f"{(f['laptop'] + f['phone']) // 60} of {cfg['feeds_limit_minutes']}m")
+    elif cmd == "meditate":
+        open_meditation(cfg, start=True)
+    elif cmd == "meditation-screen":
+        meditation_screen(cfg)
     elif cmd == "auth":
         return auth(cfg, argv[2:])
     elif cmd == "apply":

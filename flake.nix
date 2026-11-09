@@ -31,10 +31,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    claude-code = {
-      url = "github:sadjow/claude-code-nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    # corkboard's pin, so the laptop, its fleet's slots, Pepper's VM and the
+    # droplet's workspace run one Claude Code. Move it there:
+    # `nix flake update claude-code` in ~/corkboard, then
+    # `nix flake update corkboard` here.
+    claude-code.follows = "corkboard/claude-code";
 
     claude-desktop = {
       url = "github:poeck/claude-desktop-nix-flake";
