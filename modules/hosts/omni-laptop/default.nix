@@ -8,6 +8,7 @@
 
       # This host only.
       self.modules.nixos.agentVmHost
+      self.modules.nixos.antigravity-cli
       self.modules.nixos.claude-code
       self.modules.nixos.claude-desktop
       self.modules.nixos.corkboard
