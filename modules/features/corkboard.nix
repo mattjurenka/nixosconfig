@@ -384,6 +384,13 @@ in
       offer = { memory = 12288; cores = 6; };
       defaultAccount = "personal";
 
+      # The account's node, whichever leads, for sessions on its boards and
+      # brains' memory: a sealed channel as fleetd's relay-only device.
+      node = {
+        url = "https://portal.corkboard.fyi/n/tXwvWRd0Ce7CGvviZ6KtY_";
+        device = "/home/matthew/.local/state/corkboard/fleet/device.json";
+      };
+
       # Who agents work for is corkboard's (its Brains tab: account,
       # credentials); this machine has the memory for one of them.
       # Stable's vault, mounted shared and writable in every spawn for work.
@@ -394,6 +401,13 @@ in
         description = "the work brain's vault (Obsidian, Markdown)";
       };
       templates.coding.capabilities = [ "claude-code" "coding" ];
+      # The leader's forge: a real origin, pushes to its own agent/<spawn>/
+      # branches, and PRs for the rest.
+      templates.coding.git = {
+        repos = [ "mattjurenka/*" ];
+        permissions = { contents = "write"; pull_requests = "write"; issues = "read"; metadata = "read"; };
+        refs = [ "agent/{spawn}/*" ];
+      };
 
       guestModules = [
         self.modules.nixos.claude-code
