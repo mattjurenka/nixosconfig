@@ -45,17 +45,18 @@
 
       # piper insists on finding the config beside the weights and named for
       # them, so the pair is assembled into one directory rather than passed as
-      # two paths.
+      # two paths. The URLs are pinned to a commit because upstream retrains
+      # voices in place on main, which breaks the hashes.
       piperVoice = pkgs.runCommand "piper-voice-en_US-amy-medium" { } ''
         mkdir -p "$out"
         cp ${pkgs.fetchurl {
           name = "en_US-amy-medium.onnx";
-          url = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx";
+          url = "https://huggingface.co/rhasspy/piper-voices/resolve/e7229f7d33a10e145e109b886d661984201ac3c4/en/en_US/amy/medium/en_US-amy-medium.onnx";
           hash = "sha256-s6bke1e4x/vmoM4lGBYaUPWanN2KUINcAssCvdYgbBg=";
         }} "$out/en_US-amy-medium.onnx"
         cp ${pkgs.fetchurl {
           name = "en_US-amy-medium.onnx.json";
-          url = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx.json";
+          url = "https://huggingface.co/rhasspy/piper-voices/resolve/e7229f7d33a10e145e109b886d661984201ac3c4/en/en_US/amy/medium/en_US-amy-medium.onnx.json";
           hash = "sha256-laI+tNQpCdON9zu5rH9F9Zfb/N4tG/lSb96vVGaXfXc=";
         }} "$out/en_US-amy-medium.onnx.json"
       '';
