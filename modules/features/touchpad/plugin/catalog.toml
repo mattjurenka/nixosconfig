@@ -1,0 +1,14 @@
+# Index of the plugins this source ships. noctalia reads it to list and
+# compat-check the source; each plugin's own plugin.toml stays authoritative.
+[[plugin]]
+id = "jurenka/touchpad"
+name = "Touchpad"
+version = "1.0.0"
+updated_at = 1794528000
+added_at = 1794528000
+author = "matthew"
+license = "MIT"
+icon = "hand-finger"
+description = "A bar glyph showing whether the touchpad is on; click it, or Mod+T, to switch it."
+plugin_api = 26
+tags = ["input", "touchpad"]

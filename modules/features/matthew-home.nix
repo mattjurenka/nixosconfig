@@ -42,6 +42,8 @@
       # the speakers, the subscription in ~/.claude in between. The keybind
       # itself lives in niri.nix, which is where every other one does.
       config.flake.modules.homeManager.voice
+      # Mod+T and the bar glyph; see modules/features/touchpad.nix.
+      config.flake.modules.homeManager.touchpad
       inputs.spicetify-nix.homeManagerModules.default
     ];
 

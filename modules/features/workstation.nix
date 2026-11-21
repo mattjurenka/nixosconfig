@@ -22,6 +22,7 @@
       self.modules.nixos.login
       self.modules.nixos.gaming
       self.modules.nixos.power
+      self.modules.nixos.touchpad
 
       # The rest of the desktop, which every one of these hosts imported from
       # its own default.nix before this file existed. niri brings my.mouse

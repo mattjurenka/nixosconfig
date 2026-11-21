@@ -18,6 +18,8 @@ end = [
     "brightness",
     "nightlight",
     "spacer_2",
+    "touchpad",
+    "spacer_2",
     "network",
     "spacer_2",
     "bluetooth",
@@ -195,5 +197,10 @@ type = "jurenka/brightness-modes:buttons"
 # brightness-modes and for the same reason; this binding is the half that does
 # work from here. What block is running, how much of it is left and what comes
 # next -- or a padlock until the day has been planned.
+[widget.touchpad]
+# Registered over IPC from modules/features/touchpad.nix, like the two around
+# it. A finger, struck through while the touchpad is off.
+type = "jurenka/touchpad:indicator"
+
 [widget.dayplan]
 type = "jurenka/dayplan:block"

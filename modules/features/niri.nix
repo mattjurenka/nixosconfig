@@ -144,6 +144,10 @@
           # omni-laptop has lagwatch; elsewhere the key does nothing.
           "Mod+Ctrl+L".spawn-sh = "lagwatch mark";
 
+          # The touchpad off and on (touchpad.nix), from PATH like voice-ptt.
+          # The bar shows which.
+          "Mod+T".spawn-sh = "touchpad toggle";
+
           "Mod+Q".close-window = {};
           "Mod+Space".spawn-sh = "${lib.getExe noctalia} msg panel-toggle launcher";
           # noctalia's region screenshot, with the screen-dim sheet out of the
