@@ -85,12 +85,18 @@ DEFAULTS = {
     # filename in an editor or an argument in a shell. `chrom` covers both
     # chromium-browser and the chrome-<hash>-Default windows a PWA gets.
     "title_scope_app_ids": [r"chrom", r"firefox", r"librewolf", r"brave", r"\bzen\b", r"epiphany"],
+    # The 中文 launcher's YouTube window, which the learn-chinese extension holds
+    # to Chinese. Open at any hour and not a feed.
+    "study_app_ids": [r"^chrome-www\.youtube\.com__results-"],
     # What the day's allowance of feeds covers, here and on the phone together.
     "feed_titles": [r"youtube", r"twitch", r"reddit", r"\br/\w{2,21}\b", r"\bshowdown!"],
+    # Pages a feed's name is in that aren't one: where videos are made rather
+    # than watched. The gate's title rules, the allowance and drift leave them be.
+    "not_feed_titles": [r"youtube studio", r"studio\.youtube\.com"],
     "feeds_limit_minutes": 60,
     # Below this, a page doesn't fit what it's held to (see drift_watch).
     "drift_enabled": True,
-    "drift_cut": 0.35,
+    "drift_cut": 0.2,
     # Windows it leaves alone. A terminal or code editor's title is a command or
     # a path rather than what's being done, and a terminal closes without asking
     # what's running in it. The last two are dialogs another app is waiting on.
@@ -957,9 +963,11 @@ def is_blocked(cfg, win):
     title = win.get("title") or ""
     if any(re.search(p, app, re.I) for p in cfg["blocked_app_ids"]):
         return app
+    if is_study(cfg, win):
+        return None
     if not any(re.search(p, app, re.I) for p in cfg["title_scope_app_ids"]):
         return None
-    if is_work_page(cfg, title):
+    if is_work_page(cfg, title) or not_feed(cfg, title):
         return None
     return next((p for p in cfg["blocked_titles"] if re.search(p, title, re.I)), None)
 
@@ -1138,9 +1146,11 @@ def gate_watch(cfg):
 # by a small embedding model on this machine: while the gate's shut against
 # "not entertainment", and through each planned block not marked off against
 # that block. "This is work" on the notification lets that page back in for the
-# day. Pages and verdicts stay in this process's memory: a title is the name of
-# what was being watched, so it goes to the local model and no further, not to a
-# file, the journal or a notification.
+# day, and is learned from: pages like it stay open from then on. Pages and
+# verdicts stay in this process's memory: a title is the name of what was being
+# watched, so it goes to the local model and no further, not to a file, the
+# journal or a notification. What's learned is kept as the model's numbers for
+# the page marked, without its title.
 
 DRIFT_TICK_SECONDS = 5
 DRIFT_GATE = "Work, planning the day, or useful life admin. Not entertainment or leisure."
@@ -1156,6 +1166,8 @@ DRIFT_WORK = [
     "banking and bills", "calendar and planning", "studying a technical subject",
     "programming tutorial or conference talk", "code repository or pull request", "spreadsheets and budgets",
     "learning a skill", "comparing products or vendors for a project", "government, health or household errands",
+    "professional networking, careers and job search", "computer hardware and engineering articles",
+    "industry news and analysis", "research papers and science",
 ]
 # A logistic fit over similarity to the block, the leisure list and the work list.
 DRIFT_MEAN, DRIFT_SD = [0.51634, 0.53443, 0.51412], [0.13794, 0.06344, 0.05573]
@@ -1164,21 +1176,63 @@ DRIFT_WEIGHTS, DRIFT_BIAS = [1.2683, -2.0454, 1.0802], -0.5442
 BROWSER_SUFFIX = re.compile(r"\s+[-—–]\s+(mozilla firefox|firefox|chromium|google chrome|brave|zen browser|librewolf|web)( private browsing)?$", re.I)
 NO_PAGE = re.compile(r"^$|^(new tab|new private tab|private browsing|loading|untitled|about:\S*|mozilla firefox|chromium|google chrome|google|duckduckgo|bing|inbox( \(\d+\))?)$", re.I)
 
+# How alike a page and one marked as work have to be for it to stay, and how
+# many of those are kept, the newest.
+DRIFT_LEARNED_NEAR = 0.75
+DRIFT_LEARNED_KEEP = 400
+
 _work_pages = {}
 _offered = {}
+_learned = None
+# The focused window that doesn't fit but runs on the day's allowance, which
+# feeds_watch counts. Its id and nothing about it.
+_on_allowance = None
 
 
 def page_of(title):
-    return BROWSER_SUFFIX.sub("", title).strip()
+    """A title without the browser's name or a count of what's unread, so a
+    page marked as work is still that page when a notification comes in."""
+    return re.sub(r"^\(\d+\+?\)\s*", "", BROWSER_SUFFIX.sub("", title).strip())
 
 
 def is_work_page(cfg, title):
     return _work_pages.get(page_of(title)) == plan_date(cfg).isoformat()
 
 
-def offer_work(cfg, title, why):
+def learned_file():
+    return STATE_DIR / "drift-learned.json"
+
+
+def load_learned():
+    global _learned
+    if _learned is None:
+        try:
+            _learned = json.loads(learned_file().read_text())
+        except Exception:
+            _learned = []
+    return _learned
+
+
+def learn_work(v):
+    """Keep a page marked as work, unless one all but the same is kept already."""
+    global _learned
+    kept = load_learned()
+    if any(_cosine(v, k) > 0.97 for k in kept):
+        return
+    _learned = (kept + [[round(x, 5) for x in v]])[-DRIFT_LEARNED_KEEP:]
+    tmp = learned_file().with_suffix(".tmp")
+    _write_private(tmp, json.dumps(_learned))
+    tmp.replace(learned_file())
+
+
+def is_learned(v):
+    return any(_cosine(v, k) >= DRIFT_LEARNED_NEAR for k in load_learned())
+
+
+def offer_work(cfg, title, why, v=None):
     """A notification for what was just closed, whose "This is work" lets the
-    page back in until the day turns over. It waits on its own thread."""
+    page back in until the day turns over and, given the page's embedding, has
+    ones like it stay from then on. It waits on its own thread."""
     page, at = page_of(title), time.time()
     if at - _offered.get(page, 0) < 60:
         return
@@ -1194,6 +1248,8 @@ def offer_work(cfg, title, why):
             return
         if out.stdout.strip() == "work":
             _work_pages[page] = plan_date(cfg).isoformat()
+            if v:
+                learn_work(v)
 
     threading.Thread(target=ask, daemon=True).start()
 
@@ -1270,9 +1326,13 @@ def held_to(cfg, events, age):
     return on[0]["title"] if on else DRIFT_GATE
 
 
+def allowance_open(cfg, events, age):
+    """With the morning done, anything runs through blocks on the day's allowance."""
+    return gate_state(cfg, events, age)[0] and feeds_left(cfg, load_feeds(cfg)) > 0
+
+
 def feed_allowed(cfg, events, age, win):
-    """A feed, with the morning done: it runs through blocks on the day's allowance."""
-    return is_feed(cfg, win) and gate_state(cfg, events, age)[0] and feeds_left(cfg, load_feeds(cfg)) > 0
+    return is_feed(cfg, win) and allowance_open(cfg, events, age)
 
 
 def drift_watch(cfg):
@@ -1282,11 +1342,15 @@ def drift_watch(cfg):
     and its previous name on the way in, and a close here costs the window.
     Only the focused window, since a reference left on the other monitor isn't
     what's being done. Marking one as work lets the page back in, in a browser,
-    and elsewhere the whole app, whose title changes as it's used.
+    and elsewhere the whole app, whose title changes as it's used, and keeps
+    ones like it open after (learn_work). While the
+    day's allowance lasts one that doesn't fit stays, and spends it.
     """
+    global _on_allowance
     embed, last = Embedder(os.environ["DAYPLAN_EMBED_MODEL"]), None
     while True:
         time.sleep(DRIFT_TICK_SECONDS)
+        _on_allowance = None
         events, age = load_cache(cfg)
         target = held_to(cfg, events, age)
         w = next((w for w in niri_windows() if w.get("is_focused")), None)
@@ -1295,36 +1359,45 @@ def drift_watch(cfg):
             continue
         app, title = w.get("app_id") or "", w.get("title") or ""
         if any(re.search(p, app, re.I) for p in cfg["blocked_app_ids"]):
-            close_window(w)
+            if allowance_open(cfg, events, age):
+                _on_allowance = w["id"]
+            else:
+                close_window(w)
             continue
         if feed_allowed(cfg, events, age, w):
             last = None
             continue
         page = page_of(title)
-        if any(re.search(p, app, re.I) for p in cfg["drift_keep_app_ids"]) or NO_PAGE.match(page):
+        work = title if any(re.search(p, app, re.I) for p in cfg["title_scope_app_ids"]) else app
+        if any(re.search(p, app, re.I) for p in cfg["drift_keep_app_ids"]) or is_study(cfg, w) or NO_PAGE.match(page) or (
+            work == title and not_feed(cfg, title)
+        ):
             last = None
             continue
         was, last = last, (w["id"], title)
-        work = title if any(re.search(p, app, re.I) for p in cfg["title_scope_app_ids"]) else app
         if was != last or is_work_page(cfg, work):
             continue
         try:
-            fit = drift_fit(embed, page, target)
+            fit, v = drift_fit(embed, page, target), embed(page)
         except Exception as e:
             # Its type alone: the message of a failed request could carry the text.
             print(f"drift: {type(e).__name__}", file=sys.stderr, flush=True)
             continue
-        if fit < cfg["drift_cut"]:
+        if fit < cfg["drift_cut"] and not is_learned(v):
+            if allowance_open(cfg, events, age):
+                _on_allowance = w["id"]
+                continue
             close_window(w)
             last = None
-            offer_work(cfg, work, "Not work" if target == DRIFT_GATE else f"Not {target}")
+            offer_work(cfg, work, "Not work" if target == DRIFT_GATE else f"Not {target}", v)
 
 
 # ------------------------------------------------------------------------ feeds
 #
 # An allowance of feeds a day, this laptop's and the phone's together, after
 # which they close until the day turns over. Nothing here is undone by
-# `dayplan skip`, which is the morning gate's.
+# `dayplan skip`, which is the morning gate's; a page marked "This is work" as
+# it closes is no feed for the day, and spends nothing.
 #
 # What's kept is seconds and nothing else. A window's title is the name of the
 # video, so it's matched here and goes no further: not to a file, the journal,
@@ -1333,18 +1406,27 @@ def drift_watch(cfg):
 FEEDS_TICK_SECONDS = 5
 FEEDS_SYNC_SECONDS = 60
 FEEDS_WARN_SECONDS = 10 * 60
+FEEDS_STALE_SECONDS = 30
 
 
 def feeds_file():
     return STATE_DIR / "feeds.json"
 
 
+def is_study(cfg, win):
+    return any(re.search(p, win.get("app_id") or "", re.I) for p in cfg["study_app_ids"])
+
+
+def not_feed(cfg, title):
+    return any(re.search(p, title, re.I) for p in cfg["not_feed_titles"])
+
+
 def is_feed(cfg, win):
     app = win.get("app_id") or ""
     title = win.get("title") or ""
-    return any(re.search(p, app, re.I) for p in cfg["title_scope_app_ids"]) and any(
-        re.search(p, title, re.I) for p in cfg["feed_titles"]
-    )
+    return not is_study(cfg, win) and not is_work_page(cfg, title) and not not_feed(cfg, title) and any(
+        re.search(p, app, re.I) for p in cfg["title_scope_app_ids"]
+    ) and any(re.search(p, title, re.I) for p in cfg["feed_titles"])
 
 
 def load_feeds(cfg):
@@ -1368,10 +1450,24 @@ def feeds_left(cfg, f):
     return cfg["feeds_limit_minutes"] * 60 - f["laptop"] - f["phone"]
 
 
+def allowance_reading(cfg):
+    """Whether this laptop is spending the allowance now, and the minutes left.
+
+    Counting writes the file every tick, so an old one saying so is a daemon
+    that's gone.
+    """
+    f = load_feeds(cfg)
+    counting = bool(f.get("counting")) and time.time() - feeds_file().stat().st_mtime < FEEDS_STALE_SECONDS
+    return {"counting": counting, "left": _left((max(0, feeds_left(cfg, f)) + 59) // 60)}
+
+
 def close_feeds(cfg, windows):
     closed = [w for w in windows if is_feed(cfg, w)]
     for w in closed:
         close_window(w)
+        # That one page, for the day: it isn't learned from, since one video's
+        # title is much like any other's.
+        offer_work(cfg, w.get("title") or "", "Feeds used up")
     if not closed:
         return
     # A window that ignores the close comes round again on every event.
@@ -1395,7 +1491,8 @@ def sync_feeds(cfg, f):
 
 
 def feeds_watch(cfg):
-    """Count the seconds a feed is up, in any window, while the screen's in use.
+    """Count the seconds a feed is up, in any window, while the screen's in use,
+    and those of a focused window drift_watch let run on the allowance.
 
     Any window rather than the focused one, since a video on the other monitor
     is still being watched. Sampled rather than event-driven: a count can be a
@@ -1409,10 +1506,12 @@ def feeds_watch(cfg):
         gap, last = min(t - last, FEEDS_TICK_SECONDS * 3), t
         f = before = load_feeds(cfg)
         windows = niri_windows()
-        if any(w.get("is_focused") for w in windows) and any(is_feed(cfg, w) for w in windows):
+        counting = any(w.get("is_focused") for w in windows) and any(is_feed(cfg, w) or w["id"] == _on_allowance for w in windows)
+        if counting:
             carry += gap
             f = {**f, "laptop": f["laptop"] + int(carry)}
             carry -= int(carry)
+        f = {**f, "counting": counting}
         if backend(cfg) == "node" and t - synced >= FEEDS_SYNC_SECONDS:
             synced = t
             f = sync_feeds(cfg, f)
@@ -1741,7 +1840,7 @@ def watch(cfg):
     its own; the keepalive is so a widget can tell a quiet stream from a dead one."""
     last, last_at = None, 0.0
     while True:
-        reading = bar_reading(cfg)
+        reading = dict(bar_reading(cfg), allowance=allowance_reading(cfg))
         line = json.dumps(reading)
         if line != last or time.time() - last_at > 50:
             print(line, flush=True)

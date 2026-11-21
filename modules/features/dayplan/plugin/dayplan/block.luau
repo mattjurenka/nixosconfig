@@ -62,6 +62,14 @@ local function render()
     ui.label({ key = "text", text = elide(reading.text or ""), color = color }),
   }
 
+  -- Filled and coloured while this laptop's time is coming off the allowance.
+  local allowance = reading.allowance
+  if allowance ~= nil then
+    local spending = allowance.counting and "tertiary" or "on_surface_variant"
+    table.insert(nodes, ui.glyph({ key = "allowance", name = allowance.counting and "hourglass-filled" or "hourglass", size = 16, color = spending }))
+    table.insert(nodes, ui.label({ key = "allowance-left", text = allowance.left, color = spending }))
+  end
+
   -- Stack along the bar, so a side bar gets a column rather than a row running
   -- off the edge of it. Same shape as the Claude status widget next to it.
   local container = barWidget.isVertical() and ui.column or ui.row

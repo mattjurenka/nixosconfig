@@ -310,6 +310,23 @@
 
         xdg.configFile."dayplan/config.json".source = settingsFile;
 
+        # YouTube as its own app window, in a browser profile of its own so it
+        # shares no YouTube account with the usual one, with the learn-chinese
+        # extension loaded from its build. The window's app_id is what
+        # study_app_ids in dayplan.py exempts, and comes from this URL's path. The
+        # query has to stay percent-encoded: chromium drops an --app URL with raw
+        # hanzi in it, and a desktop entry's Exec would eat the percents, hence
+        # the script.
+        xdg.desktopEntries.zhongwen = {
+          name = "中文";
+          genericName = "Chinese videos";
+          exec = "${pkgs.writeShellScript "zhongwen" ''
+            exec ${lib.getExe config.programs.chromium.package} --user-data-dir="$HOME/.local/share/zhongwen-chromium" --no-first-run --load-extension="$HOME/learn-chinese/.output/chrome-mv3" '--app=https://www.youtube.com/results?search_query=%E4%B8%AD%E6%96%87'
+          ''}";
+          categories = [ "Education" ];
+          settings.StartupWMClass = "chrome-www.youtube.com__results-Default";
+        };
+
         # Where reloadPlugin points noctalia with `plugins source add`.
         xdg.configFile.${pluginDirName}.source = pluginSource;
 
