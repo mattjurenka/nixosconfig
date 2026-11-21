@@ -42,9 +42,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # See modules/features/corkboard.nix.
+    # See modules/features/corkboard.nix. git+file takes the checkout's
+    # committed tree (161 MB), where path: copied the whole working tree,
+    # node_modules, dist and .claude with it (4 GB), on every update.
     corkboard = {
-      url = "path:/home/matthew/corkboard";
+      url = "git+file:///home/matthew/corkboard";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 

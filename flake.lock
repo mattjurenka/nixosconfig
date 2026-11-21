@@ -120,14 +120,17 @@
         "nixpkgs-wasm": "nixpkgs-wasm"
       },
       "locked": {
-        "lastModified": 1795226004,
-        "narHash": "sha256-AqQ8IBSpmpa0khNmR7LrfW4kvAYkAteoL61ZLoRIV6U=",
-        "path": "/home/matthew/corkboard",
-        "type": "path"
+        "lastModified": 1795225146,
+        "narHash": "sha256-uCHHT6vtXFxvVBNFHCeWgggPwePYPwyxYiCgS0dKhjU=",
+        "ref": "refs/heads/open-core",
+        "rev": "906cfe34d581290e36ed6015097865f22058d0e5",
+        "revCount": 336,
+        "type": "git",
+        "url": "file:///home/matthew/corkboard"
       },
       "original": {
-        "path": "/home/matthew/corkboard",
-        "type": "path"
+        "type": "git",
+        "url": "file:///home/matthew/corkboard"
       }
     },
     "firefox-gnome-theme": {
