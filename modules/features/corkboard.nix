@@ -408,6 +408,15 @@ in
         permissions = { contents = "write"; pull_requests = "write"; issues = "read"; metadata = "read"; };
         refs = [ "agent/{spawn}/*" ];
       };
+      # The same, with a headless Chromium of its own (~/corkboard/fleet/caps/browser.nix).
+      templates.browser = {
+        capabilities = [ "claude-code" "coding" "browser" ];
+        git = {
+          repos = [ "mattjurenka/*" ];
+          permissions = { contents = "write"; pull_requests = "write"; issues = "read"; metadata = "read"; };
+          refs = [ "agent/{spawn}/*" ];
+        };
+      };
 
       guestModules = [
         self.modules.nixos.claude-code

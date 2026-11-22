@@ -120,11 +120,11 @@
         "nixpkgs-wasm": "nixpkgs-wasm"
       },
       "locked": {
-        "lastModified": 1795225146,
-        "narHash": "sha256-uCHHT6vtXFxvVBNFHCeWgggPwePYPwyxYiCgS0dKhjU=",
-        "ref": "refs/heads/open-core",
-        "rev": "906cfe34d581290e36ed6015097865f22058d0e5",
-        "revCount": 336,
+        "lastModified": 1795381301,
+        "narHash": "sha256-p24mkdci/3K2/sDCL9cBdvWOoszWZSxc5xDwP8Y4SC0=",
+        "ref": "refs/remotes/forge/main",
+        "rev": "ead7e26b7774a56d569fdf022e52cd58fef6afec",
+        "revCount": 342,
         "type": "git",
         "url": "file:///home/matthew/corkboard"
       },
