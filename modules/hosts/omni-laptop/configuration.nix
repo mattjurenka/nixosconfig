@@ -116,12 +116,6 @@
     }];
     networking.hostName = "omni-laptop";
 
-    # For CS2: renders at a lower res inside a native-res fullscreen window,
-    # and owns mouse input so XWayland pointer warping doesn't fight the aim.
-    programs.gamescope.enable = true;
-    # Launch with `gamemoderun` to switch to performance power settings while in-game.
-    programs.gamemode.enable = true;
-
     # Claude Desktop's Cowork tab opens /dev/vhost-vsock to reach the VM it
     # runs tasks in, and only this group may -- see
     # modules/features/claude-desktop.nix. Takes a fresh login, not just a

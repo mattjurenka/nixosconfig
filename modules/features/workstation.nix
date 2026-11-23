@@ -20,7 +20,6 @@
       self.modules.nixos.bluetooth
       self.modules.nixos.fonts
       self.modules.nixos.login
-      self.modules.nixos.gaming
       self.modules.nixos.power
       self.modules.nixos.touchpad
 
