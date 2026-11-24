@@ -181,6 +181,11 @@
       # which is exactly the drift a declarative system exists to avoid.
       obsidian
       vlc
+      # The tower's screen. It has no monitor, and the laptop's HDMI port
+      # only sends a picture out, so its desktop comes over the tower-share
+      # cable instead: Apollo on the tower (a Sunshine fork whose virtual
+      # display matches the client's resolution) streams to this.
+      moonlight-qt
       # Coursework arrives as .docx and job postings as flyers in it, and
       # nothing on this machine could open either -- no handler was registered
       # for the mime type at all. The full suite rather than AbiWord because
