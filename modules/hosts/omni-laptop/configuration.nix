@@ -121,12 +121,21 @@
     programs.gamescope.enable = true;
     # Launch with `gamemoderun` to switch to performance power settings while in-game.
     programs.gamemode.enable = true;
+    # And pin the 840M at its top clock while it runs: CS2 sits at 98% GPU
+    # busy here, and amdgpu's "auto" level was holding 2440 of 2900 MHz.
+    # gpuclockctl goes through pkexec, which gamemode's polkit rule allows
+    # without a prompt only for the gamemode group (below; takes a fresh login).
+    programs.gamemode.settings.gpu = {
+      apply_gpu_optimisations = "accept-responsibility";
+      gpu_device = 1; # /sys/class/drm/card1
+      amd_performance_level = "high";
+    };
 
     # Claude Desktop's Cowork tab opens /dev/vhost-vsock to reach the VM it
     # runs tasks in, and only this group may -- see
     # modules/features/claude-desktop.nix. Takes a fresh login, not just a
     # switch. The rest of Matt's groups are in workstation.nix.
-    users.users.matthew.extraGroups = [ "kvm" ];
+    users.users.matthew.extraGroups = [ "kvm" "gamemode" ];
 
     # On charger: performance profile + Wi-Fi power saving off (it adds ping spikes).
     # On battery: balanced profile + Wi-Fi power saving on.
